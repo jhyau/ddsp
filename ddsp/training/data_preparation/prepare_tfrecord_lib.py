@@ -15,6 +15,8 @@
 # Lint as: python3
 """Apache Beam pipeline for computing TFRecord dataset from audio files."""
 
+from collections.abc import Iterable
+
 from absl import logging
 import apache_beam as beam
 from ddsp.spectral_ops import _CREPE_SAMPLE_RATE
@@ -24,8 +26,6 @@ from ddsp.spectral_ops import LD_RANGE
 import numpy as np
 import pydub
 import tensorflow.compat.v2 as tf
-
-
 
 def _load_audio_as_array(audio_path: str,
                          sample_rate: int) -> np.array:
@@ -68,13 +68,23 @@ def _make_array_expected_length(array, expected_len, pad_value=0):
   return array
 
 
-def _load_audio(audio_path, sample_rate):
+def _load_audio(audio_path, sample_rate, file_id_list=None, output_prefix=None):
   """Load audio file."""
   logging.info("Loading '%s'.", audio_path)
   beam.metrics.Metrics.counter('prepare-tfrecord', 'load-audio').inc()
   audio = _load_audio_as_array(audio_path, sample_rate)
   # Crepe pitch extraction only works at 16Khz sample rate
   audio_crepe = _load_audio_as_array(audio_path, _CREPE_SAMPLE_RATE)
+
+  if len(file_id_list) == 0:
+    mode = 'w'
+  else:
+    mode = 'a'
+  source_id = len(file_id_list)
+  file_id_list.append(audio_path)
+  with open('%s_file_ids.txt'%output_prefix, mode) as f:
+    f.write('%i\t%s\n'%(source_id, audio_path))
+  return {'source_id': source_id, 'audio': audio, 'audio_crepe': audio_crepe}
   return {'audio': audio, 'audio_crepe': audio_crepe}
 
 
@@ -127,6 +137,7 @@ def _split_example(
       get_windows(ex['f0_confidence'], frame_rate)):
     beam.metrics.Metrics.counter('prepare-tfrecord', 'split-example').inc()
     yield {
+        'source_id': ex['source_id'],
         'audio': audio,
         'audio_crepe': audio_crepe,
         'loudness_db': loudness_db,
@@ -140,11 +151,10 @@ def _float_dict_to_tfexample(float_dict):
   return tf.train.Example(
       features=tf.train.Features(
           feature={
-              k: tf.train.Feature(float_list=tf.train.FloatList(value=v))
+              k: tf.train.Feature(float_list=tf.train.FloatList(value=v if isinstance(v, Iterable) else [v]))
               for k, v in float_dict.items()
           }
       ))
-
 
 def prepare_tfrecord(
     input_audio_paths,
@@ -176,11 +186,12 @@ def prepare_tfrecord(
   """
   pipeline_options = beam.options.pipeline_options.PipelineOptions(
       pipeline_options)
+  file_id_list = []
   with beam.Pipeline(options=pipeline_options) as pipeline:
     examples = (
         pipeline
         | beam.Create(input_audio_paths)
-        | beam.Map(_load_audio, sample_rate))
+        | beam.Map(_load_audio, sample_rate, file_id_list, output_tfrecord_path))
 
     if frame_rate:
       examples = (
