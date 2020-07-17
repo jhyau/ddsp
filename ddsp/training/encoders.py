@@ -34,9 +34,10 @@ class Encoder(tfkl.Layer):
   Hyper-parameters will be passed through the constructor.
   """
 
-  def __init__(self, f0_encoder=None, name='encoder'):
+  def __init__(self, f0_encoder=None, other_encoders=None, name='encoder'):
     super().__init__(name=name)
     self.f0_encoder = f0_encoder
+    self.other_encoders = other_encoders
 
   def call(self, conditioning):
     """Updates conditioning with z and (optionally) f0."""
@@ -50,9 +51,16 @@ class Encoder(tfkl.Layer):
 
     z = self.compute_z(conditioning)
     time_steps = int(conditioning['f0_scaled'].shape[1])
-    conditioning['z'] = self.expand_z(z, time_steps)
-
+    z = self.expand_z(z, time_steps)
+    if self.other_encoders:
+      for enc in self.other_encoders:
+        z = self.concat_encoding(enc(conditioning), z)
+    conditioning['z'] = z
     return conditioning
+
+  def concat_encoding (self, enc, z):
+    enc = self.expand_z(enc, z.shape[1])
+    return tf.concat([z, enc], axis=2)
 
   def expand_z(self, z, time_steps):
     """Make sure z has same temporal resolution as other conditioning."""
@@ -80,8 +88,9 @@ class MfccTimeDistributedRnnEncoder(Encoder):
                z_dims=32,
                z_time_steps=250,
                f0_encoder=None,
+               other_encoders=None,
                name='mfcc_time_distrbuted_rnn_encoder'):
-    super().__init__(f0_encoder=f0_encoder, name=name)
+    super().__init__(f0_encoder=f0_encoder, other_encoders=other_encoders, name=name)
     if z_time_steps not in [63, 125, 250, 500, 1000]:
       raise ValueError(
           '`z_time_steps` currently limited to 63,125,250,500 and 1000')
@@ -199,4 +208,32 @@ class ResnetF0Encoder(F0Encoder):
     f0 = ddsp.core.resample(f0, n_timesteps)
     return f0
 
+class ContextEncoder(tfkl.Layer):
+  """Mixin for context encoders."""
 
+  def call(self, conditioning):
+    return self.compute_context(conditioning)
+
+  def compute_context(self, conditioning):
+    """Takes in conditioning dictionary, returns context."""
+    raise NotImplementedError
+
+@gin.register
+class EmbeddingContextEncoder(ContextEncoder):
+  """Embeddings from a dictionary of embeddings."""
+
+  def __init__(self,
+               dimensions,
+               conditioning_key,
+               name='embedding_context_encoder'):
+    super().__init__(name=name)
+    # Note that dimensions are ([length of dictionary], [length of embedding vector])
+    self.dimensions = dimensions
+    self.conditioning_key = conditioning_key
+
+    # Layers.
+    self.embedding = nn.embedding(*dimensions)
+
+  def compute_context(self, conditioning):
+    """Compute context from embedding."""
+    return self.embedding(tf.cast(conditioning[self.conditioning_key], dtype=tf.int32)

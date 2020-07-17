@@ -160,6 +160,9 @@ def rnn(dims, rnn_type, return_sequences=True):
   rnn_class = {'lstm': tfkl.LSTM, 'gru': tfkl.GRU}[rnn_type]
   return rnn_class(dims, return_sequences=return_sequences, name=rnn_type)
 
+def embedding(vocab_size, output_dim):
+  return tf.keras.layers.Embedding(vocab_size, output_dim)
+
 
 # ------------------ Utilities -------------------------------------------------
 @gin.register

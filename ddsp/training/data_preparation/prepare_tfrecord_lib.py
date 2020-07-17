@@ -68,24 +68,14 @@ def _make_array_expected_length(array, expected_len, pad_value=0):
   return array
 
 
-def _load_audio(audio_path, sample_rate, file_id_list=None, output_prefix=None):
+def _load_audio(audio_path, sample_rate, source_id=0, env_id=0):
   """Load audio file."""
   logging.info("Loading '%s'.", audio_path)
   beam.metrics.Metrics.counter('prepare-tfrecord', 'load-audio').inc()
   audio = _load_audio_as_array(audio_path, sample_rate)
   # Crepe pitch extraction only works at 16Khz sample rate
   audio_crepe = _load_audio_as_array(audio_path, _CREPE_SAMPLE_RATE)
-
-  if len(file_id_list) == 0:
-    mode = 'w'
-  else:
-    mode = 'a'
-  source_id = len(file_id_list)
-  file_id_list.append(audio_path)
-  with open('%s_file_ids.txt'%output_prefix, mode) as f:
-    f.write('%i\t%s\n'%(source_id, audio_path))
-  return {'source_id': source_id, 'audio': audio, 'audio_crepe': audio_crepe}
-  return {'audio': audio, 'audio_crepe': audio_crepe}
+  return {'env_id': env_id, 'source_id': source_id, 'audio': audio, 'audio_crepe': audio_crepe}
 
 
 def _add_loudness(ex, sample_rate, frame_rate, n_fft=2048):
@@ -137,6 +127,7 @@ def _split_example(
       get_windows(ex['f0_confidence'], frame_rate)):
     beam.metrics.Metrics.counter('prepare-tfrecord', 'split-example').inc()
     yield {
+        'env_id': ex['env_id'],
         'source_id': ex['source_id'],
         'audio': audio,
         'audio_crepe': audio_crepe,
@@ -186,12 +177,11 @@ def prepare_tfrecord(
   """
   pipeline_options = beam.options.pipeline_options.PipelineOptions(
       pipeline_options)
-  file_id_list = []
   with beam.Pipeline(options=pipeline_options) as pipeline:
     examples = (
         pipeline
         | beam.Create(input_audio_paths)
-        | beam.Map(_load_audio, sample_rate, file_id_list, output_tfrecord_path))
+        | beam.Map(_load_audio, sample_rate))
 
     if frame_rate:
       examples = (
@@ -210,5 +200,63 @@ def prepare_tfrecord(
         | beam.io.tfrecordio.WriteToTFRecord(
             output_tfrecord_path,
             num_shards=num_shards,
+            coder=beam.coders.ProtoCoder(tf.train.Example))
+    )
+
+def prepare_single_tfrecord(
+    input_audio_path,
+    source_id,
+    env_id,
+    output_tfrecord_path,
+    sample_rate=16000,
+    frame_rate=250,
+    window_secs=4,
+    hop_secs=1,
+    pipeline_options=''):
+  """Prepares a TFRecord for use in training, evaluation, and prediction.
+
+  Args:
+    input_audio_paths: An iterable of paths to audio files to include in
+      TFRecord.
+    output_tfrecord_path: The prefix path to the output TFRecord. Shard numbers
+      will be added to actual path(s).
+    num_shards: The number of shards to use for the TFRecord. If None, this
+      number will be determined automatically.
+    sample_rate: The sample rate to use for the audio.
+    frame_rate: The frame rate to use for f0 and loudness features.
+      If set to None, these features will not be computed.
+    window_secs: The size of the sliding window (in seconds) to use to
+      split the audio and features. If 0, they will not be split.
+    hop_secs: The number of seconds to hop when computing the sliding
+      windows.
+    pipeline_options: An iterable of command line arguments to be used as
+      options for the Beam Pipeline.
+  """
+  pipeline_options = beam.options.pipeline_options.PipelineOptions(
+      pipeline_options)
+  with beam.Pipeline(options=pipeline_options) as pipeline:
+    examples = (
+        pipeline
+        | beam.Create([input_audio_path])
+        | beam.Map(_load_audio, sample_rate, source_id, env_id))
+
+    if frame_rate:
+      examples = (
+          examples
+          | beam.Map(_add_f0_estimate, frame_rate)
+          | beam.Map(_add_loudness, sample_rate, frame_rate))
+
+    if window_secs:
+      examples |= beam.FlatMap(
+          _split_example, sample_rate, frame_rate, window_secs, hop_secs)
+
+    _ = (
+        examples
+        | beam.Reshuffle()
+        | beam.Map(_float_dict_to_tfexample)
+        | beam.io.tfrecordio.WriteToTFRecord(
+            output_tfrecord_path,
+            num_shards=1,
+            shard_name_template='',
             coder=beam.coders.ProtoCoder(tf.train.Example))
     )

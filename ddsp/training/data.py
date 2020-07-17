@@ -180,6 +180,10 @@ class TFRecordProvider(DataProvider):
   def features_dict(self):
     """Dictionary of features to read from dataset."""
     return {
+        'env_id':
+            tf.io.FixedLenFeature([1], dtype=tf.float32),
+        'source_id':
+            tf.io.FixedLenFeature([1], dtype=tf.float32),
         'audio':
             tf.io.FixedLenFeature([self._audio_length], dtype=tf.float32),
         'f0_hz':

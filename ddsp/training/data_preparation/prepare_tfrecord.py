@@ -24,10 +24,12 @@ ddsp_prepare_tfrecord \
 --alsologtostderr
 
 """
+import os
+import re
 
 from absl import app
 from absl import flags
-from ddsp.training.data_preparation.prepare_tfrecord_lib import prepare_tfrecord
+from ddsp.training.data_preparation.prepare_tfrecord_lib import prepare_single_tfrecord
 import tensorflow.compat.v2 as tf
 
 FLAGS = flags.FLAGS
@@ -70,15 +72,46 @@ def run():
   for filepattern in FLAGS.input_audio_filepatterns:
     input_audio_paths.extend(tf.io.gfile.glob(filepattern))
 
-  prepare_tfrecord(
-      input_audio_paths,
-      FLAGS.output_tfrecord_path,
-      num_shards=FLAGS.num_shards,
-      sample_rate=FLAGS.sample_rate,
-      frame_rate=FLAGS.frame_rate,
-      window_secs=FLAGS.example_secs,
-      hop_secs=FLAGS.sliding_window_hop_secs,
-      pipeline_options=FLAGS.pipeline_options)
+#   prepare_tfrecord(
+#       input_audio_paths,
+#       FLAGS.output_tfrecord_path,
+#       num_shards=FLAGS.num_shards,
+#       sample_rate=FLAGS.sample_rate,
+#       frame_rate=FLAGS.frame_rate,
+#       window_secs=FLAGS.example_secs,
+#       hop_secs=FLAGS.sliding_window_hop_secs,
+#       pipeline_options=FLAGS.pipeline_options)
+
+    curr_env_id = 0
+    env_dict = {} 
+    for i, p in enumerate(input_audio_paths):
+        clean_name = os.path.splitext(os.path.basename(p))[0].replace('+', 'plus')
+        yt_id = re.search('(.*?)-\\w*?-[0-9]+_[0-9]+', clean_name).group(1)
+        
+        if yt_id in env_dict:
+            env_id = env_dict[yt_id]
+        else:
+            env_dict[yt_id] = curr_env_id
+            env_id = curr_env_id
+            curr_env_id += 1
+        
+        prepare_single_tfrecord(
+            p,
+            i,
+            env_id,
+            '%s-%05i-%05i'%(FLAGS.output_tfrecord_path, i, len(input_audio_paths)),
+            sample_rate=FLAGS.sample_rate,
+            frame_rate=FLAGS.frame_rate,
+            window_secs=FLAGS.example_secs,
+            hop_secs=FLAGS.sliding_window_hop_secs,
+            pipeline_options=FLAGS.pipeline_options
+        )
+        file_id_path = '%s_file_ids.txt'%FLAGS.output_tfrecord_path
+        if i == 0:
+            with open(file_id_path, 'w') as f:
+                f.write('%s\t%s\t%s\n'%('Material ID', 'Environment ID', 'Path'))
+        with open(file_id_path, 'a') as f:
+            f.write('%i\t%i\t%s\n'%(i, env_id, p))
 
 
 def main(unused_argv):
