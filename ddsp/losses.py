@@ -69,6 +69,7 @@ class SpectralLoss(tfkl.Layer):
                delta_delta_time_weight=0.0,
                delta_freq_weight=0.0,
                delta_delta_freq_weight=0.0,
+               cumsum_freq_weight=0.0,
                logmag_weight=0.0,
                loudness_weight=0.0,
                name='spectral_loss'):
@@ -80,21 +81,24 @@ class SpectralLoss(tfkl.Layer):
     self.delta_delta_time_weight = delta_delta_time_weight
     self.delta_freq_weight = delta_freq_weight
     self.delta_delta_freq_weight = delta_delta_freq_weight
+    self.cumsum_freq_weight = cumsum_freq_weight
     self.logmag_weight = logmag_weight
     self.loudness_weight = loudness_weight
+
+    self.spectrogram_ops = []
+    for size in self.fft_sizes:
+      spectrogram_op = functools.partial(spectral_ops.compute_mag, size=size)
+      self.spectrogram_ops.append(spectrogram_op)
 
   def call(self, target_audio, audio):
 
     loss = 0.0
-    loss_ops = []
-    diff = spectral_ops.diff
 
-    for size in self.fft_sizes:
-      loss_op = functools.partial(spectral_ops.compute_mag, size=size)
-      loss_ops.append(loss_op)
+    diff = spectral_ops.diff
+    cumsum = tf.math.cumsum
 
     # Compute loss for each fft size.
-    for loss_op in loss_ops:
+    for loss_op in self.spectrogram_ops:
       target_mag = loss_op(target_audio)
       value_mag = loss_op(audio)
 
@@ -126,6 +130,12 @@ class SpectralLoss(tfkl.Layer):
         value = diff(diff(value_mag, axis=2), axis=2)
         loss += self.delta_delta_freq_weight * mean_difference(
             target, value, self.loss_type)
+      # TODO(kyriacos) normalize cumulative spectrogram
+      if self.cumsum_freq_weight > 0:
+        target = cumsum(target_mag, axis=2)
+        value = cumsum(value_mag, axis=2)
+        loss += self.cumsum_freq_weight * mean_difference(
+            target, value, self.loss_type)
 
       # Add logmagnitude loss, reusing spectrogram.
       if self.logmag_weight > 0:
@@ -135,8 +145,9 @@ class SpectralLoss(tfkl.Layer):
                                                      self.loss_type)
 
     if self.loudness_weight > 0:
-      target = spectral_ops.compute_loudness(target_audio, n_fft=2048)
-      value = spectral_ops.compute_loudness(audio, n_fft=2048)
+      target = spectral_ops.compute_loudness(target_audio, n_fft=2048,
+                                             use_tf=True)
+      value = spectral_ops.compute_loudness(audio, n_fft=2048, use_tf=True)
       loss += self.loudness_weight * mean_difference(target, value,
                                                      self.loss_type)
 
@@ -164,10 +175,13 @@ class EmbeddingLoss(tfkl.Layer):
     self.pretrained_model = pretrained_model
 
   def call(self, target_audio, audio):
-    audio, target_audio = tf_float32(audio), tf_float32(target_audio)
-    target_emb = self.pretrained_model(target_audio)
-    synth_emb = self.pretrained_model(audio)
-    loss = self.weight * mean_difference(target_emb, synth_emb, self.loss_type)
+    loss = 0.0
+    if self.weight > 0.0:
+      audio, target_audio = tf_float32(audio), tf_float32(target_audio)
+      target_emb = self.pretrained_model(target_audio)
+      synth_emb = self.pretrained_model(audio)
+      loss = self.weight * mean_difference(
+          target_emb, synth_emb, self.loss_type)
     return loss
 
 
@@ -220,7 +234,7 @@ class PretrainedCREPE(tfkl.Layer):
     self._model = crepe.core.build_and_load_model(self._model_capacity)
     self.frame_length = 1024
 
-  def build(self, x_shape):
+  def build(self, unused_x_shape):
     self.layer_names = [l.name for l in self._model.layers]
 
     if self._activation_layer not in self.layer_names:

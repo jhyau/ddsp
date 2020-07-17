@@ -27,6 +27,26 @@ _AUTOTUNE = tf.data.experimental.AUTOTUNE
 class DataProvider(object):
   """Base class for returning a dataset."""
 
+  def __init__(self, sample_rate, frame_rate):
+    """DataProvider constructor.
+
+    Args:
+      sample_rate: Sample rate of audio in the dataset.
+      frame_rate: Frame rate of features in the dataset.
+    """
+    self._sample_rate = sample_rate
+    self._frame_rate = frame_rate
+
+  @property
+  def sample_rate(self):
+    """Return dataset sample rate, must be defined in the constructor."""
+    return self._sample_rate
+
+  @property
+  def frame_rate(self):
+    """Return dataset feature frame rate, must be defined in the constructor."""
+    return self._frame_rate
+
   def get_dataset(self, shuffle):
     """A method that returns a tf.data.Dataset."""
     raise NotImplementedError
@@ -52,7 +72,7 @@ class DataProvider(object):
 class TfdsProvider(DataProvider):
   """Base class for reading datasets from TensorFlow Datasets (TFDS)."""
 
-  def __init__(self, name, split, data_dir):
+  def __init__(self, name, split, data_dir, sample_rate, frame_rate):
     """TfdsProvider constructor.
 
     Args:
@@ -60,10 +80,13 @@ class TfdsProvider(DataProvider):
       split: Dataset split to use of the TFDS dataset.
       data_dir: The directory to read TFDS datasets from. Defaults to
         "~/tensorflow_datasets".
+      sample_rate: Sample rate of audio in the dataset.
+      frame_rate: Frame rate of features in the dataset.
     """
     self._name = name
     self._split = split
     self._data_dir = data_dir
+    super().__init__(sample_rate, frame_rate)
 
   def get_dataset(self, shuffle=True):
     """Read dataset.
@@ -93,7 +116,9 @@ class NSynthTfds(TfdsProvider):
   def __init__(self,
                name='nsynth/gansynth_subset.f0_and_loudness:2.3.0',
                split='train',
-               data_dir='gs://tfds-data/datasets'):
+               data_dir='gs://tfds-data/datasets',
+               sample_rate=16000,
+               frame_rate=250):
     """TfdsProvider constructor.
 
     Args:
@@ -101,13 +126,15 @@ class NSynthTfds(TfdsProvider):
       split: Dataset split to use of the TFDS dataset.
       data_dir: The directory to read the prepared NSynth dataset from. Defaults
         to the public TFDS GCS bucket.
+      sample_rate: Sample rate of audio in the dataset.
+      frame_rate: Frame rate of features in the dataset.
     """
     if data_dir == 'gs://tfds-data/datasets':
       logging.warning(
           'Using public TFDS GCS bucket to load NSynth. If not running on '
           'GCP, this will be very slow, and it is recommended you prepare '
           'the dataset locally with TFDS and set the data_dir appropriately.')
-    super().__init__(name, split, data_dir)
+    super().__init__(name, split, data_dir, sample_rate, frame_rate)
 
   def get_dataset(self, shuffle=True):
     """Returns dataset with slight restructuring of feature dictionary."""
@@ -135,19 +162,21 @@ class NSynthTfds(TfdsProvider):
     return dataset
 
 
-@gin.register
-class TFRecordProvider(DataProvider):
-  """Class for reading TFRecord and returning a dataset."""
+class RecordProvider(DataProvider):
+  """Class for reading records and returning a dataset."""
 
   def __init__(self,
-               file_pattern=None,
-               example_secs=4,
-               sample_rate=16000,
-               frame_rate=250):
-    """TFRecordProvider constructor."""
+               file_pattern,
+               example_secs,
+               sample_rate,
+               frame_rate,
+               data_format_map_fn):
+    """RecordProvider constructor."""
     self._file_pattern = file_pattern or self.default_file_pattern
     self._audio_length = example_secs * sample_rate
     self._feature_length = example_secs * frame_rate
+    super().__init__(sample_rate, frame_rate)
+    self._data_format_map_fn = data_format_map_fn
 
   @property
   def default_file_pattern(self):
@@ -170,7 +199,7 @@ class TFRecordProvider(DataProvider):
 
     filenames = tf.data.Dataset.list_files(self._file_pattern, shuffle=shuffle)
     dataset = filenames.interleave(
-        map_func=tf.data.TFRecordDataset,
+        map_func=self._data_format_map_fn,
         cycle_length=40,
         num_parallel_calls=_AUTOTUNE)
     dataset = dataset.map(parse_tfexample, num_parallel_calls=_AUTOTUNE)
@@ -193,5 +222,19 @@ class TFRecordProvider(DataProvider):
         'loudness_db':
             tf.io.FixedLenFeature([self._feature_length], dtype=tf.float32),
     }
+
+
+@gin.register
+class TFRecordProvider(RecordProvider):
+  """Class for reading TFRecords and returning a dataset."""
+
+  def __init__(self,
+               file_pattern=None,
+               example_secs=4,
+               sample_rate=16000,
+               frame_rate=250):
+    """TFRecordProvider constructor."""
+    super().__init__(file_pattern, example_secs, sample_rate,
+                     frame_rate, tf.data.TFRecordDataset)
 
 

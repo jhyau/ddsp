@@ -15,11 +15,9 @@
 # Lint as: python3
 """Library of functions for differentiable digital signal processing (DDSP)."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
 import collections
+import copy
 from typing import Any, Dict, Text, TypeVar
 
 import gin
@@ -40,8 +38,25 @@ def tf_float32(x):
 
 
 def make_iterable(x):
-  """Ensure that x is an iterable."""
-  return x if isinstance(x, collections.Iterable) else [x]
+  """Wrap in a list if not iterable, return empty list if None."""
+  if x is None:
+    return []
+  else:
+    return x if isinstance(x, collections.Iterable) else [x]
+
+
+def copy_if_tf_function(x):
+  """Copy if wrapped by tf.function.
+
+  Prevents side-effects if x is the input to the tf.function and it is later
+  altered. If eager, avoids unnecessary copies.
+  Args:
+    x: Any inputs.
+
+  Returns:
+    A shallow copy of x if inside a tf.function.
+  """
+  return copy.copy(x) if not tf.executing_eagerly() else x
 
 
 def nested_lookup(nested_key: Text,
@@ -66,6 +81,37 @@ def nested_lookup(nested_key: Text,
   return value
 
 
+# Math -------------------------------------------------------------------------
+def safe_divide(numerator, denominator, eps=1e-7):
+  """Avoid dividing by zero by adding a small epsilon."""
+  safe_denominator = tf.where(
+      denominator == 0.0, eps * tf.ones_like(denominator), denominator)
+  return numerator / safe_denominator
+
+
+def log(x, base=2.0):
+  """Logarithm with base as an argument."""
+  return tf.math.log(x) / tf.math.log(base)
+
+
+def log_scale(x, min_x, max_x):
+  """Scales a -1 to 1 value logarithmically between min and max."""
+  x = tf_float32(x)
+  x = (x + 1.0) / 2.0  # Scale [-1, 1] to [0, 1]
+  return tf.exp((1.0 - x) * tf.math.log(min_x) + x * tf.math.log(max_x))
+
+
+def soft_limit(x, x_min=0.0, x_max=1.0):
+  """Softly limits inputs to the range [x_min, x_max]."""
+  return tf.nn.softplus(x) + x_min - tf.nn.softplus(x - (x_max - x_min))
+
+
+def gradient_reversal(x):
+  """Identity operation that reverses the gradient."""
+  return tf.stop_gradient(2.0 * x) - x
+
+
+# Unit Conversions -------------------------------------------------------------
 def midi_to_hz(notes: Number) -> Number:
   """TF-compatible midi_to_hz function."""
   notes = tf_float32(notes)
@@ -75,8 +121,7 @@ def midi_to_hz(notes: Number) -> Number:
 def hz_to_midi(frequencies: Number) -> Number:
   """TF-compatible hz_to_midi function."""
   frequencies = tf_float32(frequencies)
-  log2 = lambda x: tf.math.log(x) / tf.math.log(2.0)
-  notes = 12.0 * (log2(frequencies) - log2(440.0)) + 69.0
+  notes = 12.0 * (log(frequencies, 2.0) - log(440.0, 2.0)) + 69.0
   # Map 0 Hz to MIDI 0 (Replace -inf with 0.)
   cond = tf.equal(notes, -np.inf)
   notes = tf.where(cond, 0.0, notes)
@@ -125,6 +170,228 @@ def hz_to_unit(hz: Number,
                       clip=clip)
 
 
+def hz_to_bark(hz):
+  """From Tranmuller (1990, https://asa.scitation.org/doi/10.1121/1.399849)."""
+  return 26.81 / (1.0 + (1960.0 / hz)) - 0.53
+
+
+def bark_to_hz(bark):
+  """From Tranmuller (1990, https://asa.scitation.org/doi/10.1121/1.399849)."""
+  return 1960.0 / (26.81 / (bark + 0.53) - 1.0)
+
+
+def hz_to_mel(hz):
+  """From Young et al. "The HTK book", Chapter 5.4."""
+  return 2595.0 * log(1.0 + hz / 700.0, 10.0)
+
+
+def mel_to_hz(mel):
+  """From Young et al. "The HTK book", Chapter 5.4."""
+  return 700.0 * (10.0**(mel / 2595.0) - 1.0)
+
+
+def hz_to_erb(hz):
+  """Equivalent Rectangular Bandwidths (ERB) from Moore & Glasberg (1996).
+
+  https://research.tue.nl/en/publications/a-revision-of-zwickers-loudness-model
+  https://ccrma.stanford.edu/~jos/bbt/Equivalent_Rectangular_Bandwidth.html
+  Args:
+    hz: Inputs frequencies in hertz.
+
+  Returns:
+    Critical bandwidths (in hertz) for each input frequency.
+  """
+  return 0.108 * hz + 24.7
+
+
+# Scaling functions ------------------------------------------------------------
+@gin.register
+def exp_sigmoid(x, exponent=10.0, max_value=2.0, threshold=1e-7):
+  """Exponentiated Sigmoid pointwise nonlinearity.
+
+  Bounds input to [threshold, max_value] with slope given by exponent.
+
+  Args:
+    x: Input tensor.
+    exponent: In nonlinear regime (away from x=0), the output varies by this
+      factor for every change of x by 1.0.
+    max_value: Limiting value at x=inf.
+    threshold: Limiting value at x=-inf. Stablizes training when outputs are
+      pushed to 0.
+
+  Returns:
+    A tensor with pointwise nonlinearity applied.
+  """
+  x = tf_float32(x)
+  return max_value * tf.nn.sigmoid(x)**tf.math.log(exponent) + threshold
+
+
+@gin.register
+def sym_exp_sigmoid(x, width=8.0):
+  """Symmetrical version of exp_sigmoid centered at (0, 1e-7)."""
+  x = tf_float32(x)
+  return exp_sigmoid(width * (tf.abs(x)/2.0 - 1.0))
+
+
+def _add_depth_axis(freqs: tf.Tensor, depth: int = 1) -> tf.Tensor:
+  """Turns [batch, time, sinusoids*depth] to [batch, time, sinusoids, depth]."""
+  freqs = freqs[..., tf.newaxis]
+  # Unpack sinusoids dimension.
+  n_batch, n_time, n_combined, _ = freqs.shape
+  n_sinusoids = int(n_combined) // depth
+  return tf.reshape(freqs, [n_batch, n_time, n_sinusoids, depth])
+
+
+@gin.register
+def frequencies_softmax(freqs: tf.Tensor,
+                        depth: int = 1,
+                        hz_min: float = 20.0,
+                        hz_max: float = 8000.0) -> tf.Tensor:
+  """Softmax to logarithmically scale network outputs to frequencies.
+
+  Args:
+    freqs: Neural network outputs, [batch, time, n_sinusoids * depth] or
+      [batch, time, n_sinusoids, depth].
+    depth: If freqs is 3-D, the number of softmax components per a sinusoid to
+      unroll from the last dimension.
+    hz_min: Lowest frequency to consider.
+    hz_max: Highest frequency to consider.
+
+  Returns:
+    A tensor of frequencies in hertz [batch, time, n_sinusoids].
+  """
+  if len(freqs.shape) == 3:
+    # Add depth: [B, T, N*D] -> [B, T, N, D]
+    freqs = _add_depth_axis(freqs, depth)
+  else:
+    depth = int(freqs.shape[-1])
+
+  # Probs: [B, T, N, D].
+  f_probs = tf.nn.softmax(freqs, axis=-1)
+
+  # [1, 1, 1, D]
+  unit_bins = tf.linspace(0.0, 1.0, depth)
+  unit_bins = unit_bins[tf.newaxis, tf.newaxis, tf.newaxis, :]
+
+  # [B, T, N]
+  f_unit = tf.reduce_sum(unit_bins * f_probs, axis=-1, keepdims=False)
+  return unit_to_hz(f_unit, hz_min=hz_min, hz_max=hz_max)
+
+
+@gin.register
+def frequencies_sigmoid(freqs: tf.Tensor,
+                        depth: int = 1,
+                        hz_min: float = 0.0,
+                        hz_max: float = 8000.0) -> tf.Tensor:
+  """Sum of sigmoids to logarithmically scale network outputs to frequencies.
+
+  Args:
+    freqs: Neural network outputs, [batch, time, n_sinusoids * depth] or
+      [batch, time, n_sinusoids, depth].
+    depth: If freqs is 3-D, the number of sigmoid components per a sinusoid to
+      unroll from the last dimension.
+    hz_min: Lowest frequency to consider.
+    hz_max: Highest frequency to consider.
+
+  Returns:
+    A tensor of frequencies in hertz [batch, time, n_sinusoids].
+  """
+  if len(freqs.shape) == 3:
+    # Add depth: [B, T, N*D] -> [B, T, N, D]
+    freqs = _add_depth_axis(freqs, depth)
+  else:
+    depth = int(freqs.shape[-1])
+
+  # Probs: [B, T, N, D]
+  f_probs = tf.nn.sigmoid(freqs)
+
+  # [B, T N]
+  # Partition frequency space in factors of 2, limit to range [hz_max, hz_min].
+  hz_scales = []
+  hz_min_copy = hz_min
+  remainder = hz_max - hz_min
+  scale_factor = remainder**(1.0 / depth)
+  for i in range(depth):
+    if i == (depth - 1):
+      # Last depth element goes between minimum and remainder.
+      hz_max = remainder
+      hz_min = hz_min_copy
+    else:
+      # Reduce max by a constant factor for each depth element.
+      hz_max = remainder * (1.0 - 1.0 / scale_factor)
+      hz_min = 0
+      remainder -= hz_max
+
+    hz_scales.append(unit_to_hz(f_probs[..., i],
+                                hz_min=hz_min,
+                                hz_max=hz_max))
+
+  return tf.reduce_sum(tf.stack(hz_scales, axis=-1), axis=-1)
+
+
+@gin.register
+def frequencies_critical_bands(freqs,
+                               depth=1,
+                               depth_scale=10.0,
+                               bandwidth_scale=1.0,
+                               hz_min=20.0,
+                               hz_max=8000.0,
+                               scale='bark'):
+  """Center frequencies scaled on mel or bark scale, with ranges given by erb.
+
+  Args:
+    freqs: Neural network outputs, [batch, time, n_sinusoids * depth] or
+      [batch, time, n_sinusoids, depth].
+    depth: If freqs is 3-D, the number of sigmoid components per a sinusoid to
+      unroll from the last dimension.
+    depth_scale: The degree by which to reduce the influence of each subsequent
+      dimension of depth.
+    bandwidth_scale: Multiplier (to ERB) for the range of each sinusoid.
+    hz_min: Lowest frequency to consider.
+    hz_max: Highest frequency to consider.
+    scale: Critical frequency scaling, must be either 'mel' or 'bark'.
+
+  Returns:
+    A tensor of frequencies in hertz [batch, time, n_sinusoids].
+  """
+  if len(freqs.shape) == 3:
+    # Add depth: [B, T, N*D] -> [B, T, N, D]
+    freqs = _add_depth_axis(freqs, depth)
+  else:
+    depth = int(freqs.shape[-1])
+
+  # Figure out the number of sinusoids.
+  n_sinusoids = freqs.shape[-2]
+
+  # Initilaize the critical frequencies and bandwidths.
+  if scale == 'bark':
+    # Bark.
+    bark_min = hz_to_bark(hz_min)
+    bark_max = hz_to_bark(hz_max)
+    linear_bark = np.linspace(bark_min, bark_max, n_sinusoids)
+    f_center = bark_to_hz(linear_bark)
+  else:
+    # Mel.
+    mel_min = hz_to_mel(hz_min)
+    mel_max = hz_to_mel(hz_max)
+    linear_mel = np.linspace(mel_min, mel_max, n_sinusoids)
+    f_center = mel_to_hz(linear_mel)
+
+  # Bandwiths given by equivalent rectangular bandwidth (ERB).
+  bw = hz_to_erb(f_center)
+
+  # Probs: [B, T, N, D]
+  modifier = tf.nn.tanh(freqs)
+  depth_modifier = depth_scale ** -tf.range(depth, dtype=tf.float32)
+  # print(depth, depth_modifier, modifier)
+  modifier = tf.reduce_sum(
+      modifier * depth_modifier[tf.newaxis, tf.newaxis, tf.newaxis, :], axis=-1)
+
+  f_modifier = bandwidth_scale * bw[tf.newaxis, tf.newaxis, :] * modifier
+  return soft_limit(f_center + f_modifier, hz_min, hz_max)
+
+
+# Resampling -------------------------------------------------------------------
 def resample(inputs: tf.Tensor,
              n_timesteps: int,
              method: Text = 'linear',
@@ -136,10 +403,10 @@ def resample(inputs: tf.Tensor,
       [batch_size, n_frames], [batch_size, n_frames, channels], or
       [batch_size, n_frames, n_freq, channels].
     n_timesteps: Time resolution of the output signal.
-    method: Type of resampling, must be in ['linear', 'cubic', 'window']. Linear
-      and cubic ar typical bilinear, bicubic interpolation. Window uses
-      overlapping windows (only for upsampling) which is smoother for amplitude
-      envelopes.
+    method: Type of resampling, must be in ['nearest', 'linear', 'cubic',
+      'window']. Linear and cubic ar typical bilinear, bicubic interpolation.
+      'window' uses overlapping windows (only for upsampling) which is smoother
+      for amplitude envelopes with large frame sizes.
     add_endpoint: Hold the last timestep for an additional step as the endpoint.
       Then, n_timesteps is divided evenly into n_frames segments. If false, use
       the last timestep as the endpoint, producing (n_frames - 1) segments with
@@ -151,7 +418,8 @@ def resample(inputs: tf.Tensor,
 
   Raises:
     ValueError: If method is 'window' and input is 4-D.
-    ValueError: If method is not one of 'linear', 'cubic', or 'window'.
+    ValueError: If method is not one of 'nearest', 'linear', 'cubic', or
+      'window'.
   """
   inputs = tf_float32(inputs)
   is_1d = len(inputs.shape) == 1
@@ -175,7 +443,9 @@ def resample(inputs: tf.Tensor,
     return outputs[:, :, 0, :] if not is_4d else outputs
 
   # Perform resampling.
-  if method == 'linear':
+  if method == 'nearest':
+    outputs = _image_resize(tf.compat.v1.image.ResizeMethod.NEAREST_NEIGHBOR)
+  elif method == 'linear':
     outputs = _image_resize(tf.compat.v1.image.ResizeMethod.BILINEAR)
   elif method == 'cubic':
     outputs = _image_resize(tf.compat.v1.image.ResizeMethod.BICUBIC)
@@ -183,7 +453,7 @@ def resample(inputs: tf.Tensor,
     outputs = upsample_with_windows(inputs, n_timesteps, add_endpoint)
   else:
     raise ValueError('Method ({}) is invalid. Must be one of {}.'.format(
-        method, "['linear', 'cubic', 'window']"))
+        method, "['nearest', 'linear', 'cubic', 'window']"))
 
   # Return outputs to the same dimensionality of the inputs.
   if is_1d:
@@ -266,39 +536,66 @@ def upsample_with_windows(inputs: tf.Tensor,
   return x[:, hop_size:-hop_size, :]
 
 
-def log_scale(x, min_x, max_x):
-  """Scales a -1 to 1 value logarithmically between min and max."""
-  x = tf_float32(x)
-  x = (x + 1.0) / 2.0  # Scale [-1, 1] to [0, 1]
-  return tf.exp((1.0 - x) * tf.math.log(min_x) + x * tf.math.log(max_x))
-
-
-@gin.register
-def exp_sigmoid(x, exponent=10.0, max_value=2.0, threshold=1e-7):
-  """Exponentiated Sigmoid pointwise nonlinearity.
-
-  Bounds input to [threshold, max_value] with slope given by exponent.
+# Synth conversions ------------------------------------------------------------
+def sinusoidal_to_harmonic(sin_amps,
+                           sin_freqs,
+                           f0_hz,
+                           harmonic_width=0.1,
+                           n_harmonics=100,
+                           sample_rate=16000,
+                           normalize=False):
+  """Extract harmonic components from sinusoids given a fundamental frequency.
 
   Args:
-    x: Input tensor.
-    exponent: In nonlinear regime (away from x=0), the output varies by this
-      factor for every change of x by 1.0.
-    max_value: Limiting value at x=inf.
-    threshold: Limiting value at x=-inf. Stablizes training when outputs are
-      pushed to 0.
+    sin_amps: Sinusoidal amplitudes (linear), shape [batch, time, n_sinusoids].
+    sin_freqs: Sinusoidal frequencies in Hz, shape [batch, time, n_sinusoids].
+    f0_hz: Fundamental frequency in Hz, shape [batch, time, 1].
+    harmonic_width: Standard deviation of gaussian weighting based on relative
+      frequency difference between a harmonic and a sinusoid.
+    n_harmonics: Number of output harmonics to consider.
+    sample_rate: Hertz, rate of the signal.
+    normalize: If true, per timestep, each harmonic has a max of 1.0 weight to
+      assign between the sinusoids. max(harm_amp) = max(sin_amp).
 
   Returns:
-    A tensor with pointwise nonlinearity applied.
+    harm_amp: Harmonic amplitude (linear), shape [batch, time, 1].
+    harm_dist: Harmonic distribution, shape [batch, time, n_harmonics].
   """
-  x = tf_float32(x)
-  return max_value * tf.nn.sigmoid(x)**tf.math.log(exponent) + threshold
+  # [b, t, n_harm]
+  harm_freqs = get_harmonic_frequencies(f0_hz, n_harmonics)
+
+  # [b, t, n_harm, n_sin]
+  freqs_diff = sin_freqs[:, :, tf.newaxis, :] - harm_freqs[..., tf.newaxis]
+  freqs_ratio = tf.abs(safe_divide(freqs_diff, f0_hz[..., tf.newaxis]))
+  weights = tf.math.exp(-(freqs_ratio / harmonic_width)**2.0)
+
+  if normalize:
+    # Sum of sinusoidal weights for a given harmonic. [b, t, n_harm, 1]
+    weights_sum = tf.reduce_sum(weights, axis=-1, keepdims=True)
+    weights_norm = safe_divide(weights, weights_sum)
+    weights = tf.where(weights_sum > 1.0, weights_norm, weights)
+
+  # [b, t, n_harm, n_sin] -> [b, t, n_harm]
+  harm_amps = tf.reduce_sum(weights * sin_amps[:, :, tf.newaxis, :], axis=-1)
+
+  # Filter harmonics above nyquist.
+  harm_amps = remove_above_nyquist(harm_freqs, harm_amps, sample_rate)
+
+  # Get harmonic distribution.
+  harm_amp = tf.reduce_sum(harm_amps, axis=-1, keepdims=True)
+  harm_dist = safe_divide(harm_amps, harm_amp)
+
+  return harm_amp, harm_dist
 
 
-@gin.register
-def sym_exp_sigmoid(x, width=8.0):
-  """Symmetrical version of exp_sigmoid centered at (0, 1e-7)."""
-  x = tf_float32(x)
-  return exp_sigmoid(width * (tf.abs(x)/2.0 - 1.0))
+def harmonic_to_sinusoidal(harm_amp, harm_dist, f0_hz, sample_rate=16000):
+  """Converts controls for a harmonic synth to those for a sinusoidal synth."""
+  n_harmonics = int(harm_dist.shape[-1])
+  freqs = get_harmonic_frequencies(f0_hz, n_harmonics)
+  # Double check to remove anything above Nyquist.
+  harm_dist = remove_above_nyquist(f0_hz, harm_dist, sample_rate)
+  amps = harm_amp * harm_dist
+  return amps, freqs
 
 
 # Additive Synthesizer ---------------------------------------------------------
@@ -798,7 +1095,7 @@ def frequency_impulse_response(magnitudes: tf.Tensor,
   Args:
     magnitudes: Frequency transfer curve. Float32 Tensor of shape [batch,
       n_frames, n_frequencies] or [batch, n_frequencies]. The frequencies of the
-      last dimension are ordered as [0, f_nyqist / (n_frames -1), ...,
+      last dimension are ordered as [0, f_nyqist / (n_frequencies -1), ...,
       f_nyquist], where f_nyquist is (sample_rate / 2). Automatically splits the
       audio into equally sized frames to match frames in magnitudes.
     window_size: Size of the window to apply in the time domain. If window_size
@@ -878,7 +1175,7 @@ def frequency_filter(audio: tf.Tensor,
     audio: Input audio. Tensor of shape [batch, audio_timesteps].
     magnitudes: Frequency transfer curve. Float32 Tensor of shape [batch,
       n_frames, n_frequencies] or [batch, n_frequencies]. The frequencies of the
-      last dimension are ordered as [0, f_nyqist / (n_frames -1), ...,
+      last dimension are ordered as [0, f_nyqist / (n_frequencies -1), ...,
       f_nyquist], where f_nyquist is (sample_rate / 2). Automatically splits the
       audio into equally sized frames to match frames in magnitudes.
     window_size: Size of the window to apply in the time domain. If window_size

@@ -44,6 +44,8 @@ setuptools.setup(
         'gin-config>=0.3.0',
         'librosa',
         'pydub',
+        'mir_eval',
+        'numba < 0.50',  # temporary fix for librosa import
         'numpy',
         'scipy',
         'six',
@@ -59,7 +61,7 @@ setuptools.setup(
             'avro-python3!=1.9.2',
             'apache_beam',
         ],
-        'test': ['pytest', 'pylint'],
+        'test': ['pytest', 'pylint!=2.5.0'],
     },
     entry_points={
         'console_scripts': [

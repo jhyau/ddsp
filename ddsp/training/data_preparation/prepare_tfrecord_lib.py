@@ -19,10 +19,7 @@ from collections.abc import Iterable
 
 from absl import logging
 import apache_beam as beam
-from ddsp.spectral_ops import _CREPE_SAMPLE_RATE
-from ddsp.spectral_ops import compute_f0
-from ddsp.spectral_ops import compute_loudness
-from ddsp.spectral_ops import LD_RANGE
+from ddsp import spectral_ops
 import numpy as np
 import pydub
 import tensorflow.compat.v2 as tf
@@ -50,53 +47,35 @@ def _load_audio_as_array(audio_path: str,
     audio_segment = audio_segment.set_frame_rate(sample_rate)
     audio = np.array(audio_segment.get_array_of_samples()).astype(np.float32)
     # Zero pad missing samples, if any
-    audio = _make_array_expected_length(audio, expected_len)
+    audio = spectral_ops.pad_or_trim_to_expected_length(audio, expected_len)
   # Convert from int to float representation.
   audio /= 2**(8 * audio_segment.sample_width)
   return audio
-
-
-def _make_array_expected_length(array, expected_len, pad_value=0):
-  """Make array equal to the expected length."""
-  if len(array) < expected_len:
-    # Pad missing samples
-    n_padding = expected_len - len(array)
-    array = np.concatenate([array, np.ones(n_padding) * pad_value], axis=0)
-  elif len(array) > expected_len:
-    # Trim extra samples
-    array = array[:expected_len]
-  return array
-
 
 def _load_audio(audio_path, sample_rate, source_id=0, env_id=0):
   """Load audio file."""
   logging.info("Loading '%s'.", audio_path)
   beam.metrics.Metrics.counter('prepare-tfrecord', 'load-audio').inc()
   audio = _load_audio_as_array(audio_path, sample_rate)
-  # Crepe pitch extraction only works at 16Khz sample rate
-  audio_crepe = _load_audio_as_array(audio_path, _CREPE_SAMPLE_RATE)
-  return {'env_id': env_id, 'source_id': source_id, 'audio': audio, 'audio_crepe': audio_crepe}
+  return {'env_id': env_id, 'source_id': source_id, 'audio': audio}
 
 
-def _add_loudness(ex, sample_rate, frame_rate, n_fft=2048):
+def add_loudness(ex, sample_rate, frame_rate, n_fft=2048):
   """Add loudness in dB."""
   beam.metrics.Metrics.counter('prepare-tfrecord', 'compute-loudness').inc()
   audio = ex['audio']
-  expected_len = int(len(audio) / sample_rate * frame_rate)
-  mean_loudness_db = compute_loudness(audio, sample_rate, frame_rate, n_fft)
-  # Trim `mean_loudness_db` or pad to dB floor
-  mean_loudness_db = _make_array_expected_length(mean_loudness_db, expected_len,
-                                                 -LD_RANGE)
+  mean_loudness_db = spectral_ops.compute_loudness(audio, sample_rate,
+                                                   frame_rate, n_fft)
   ex = dict(ex)
   ex['loudness_db'] = mean_loudness_db.astype(np.float32)
   return ex
 
 
-def _add_f0_estimate(ex, frame_rate):
+def _add_f0_estimate(ex, sample_rate, frame_rate):
   """Add fundamental frequency (f0) estimate using CREPE."""
   beam.metrics.Metrics.counter('prepare-tfrecord', 'estimate-f0').inc()
-  audio = ex['audio_crepe']
-  f0_hz, f0_confidence = compute_f0(audio, _CREPE_SAMPLE_RATE, frame_rate)
+  audio = ex['audio']
+  f0_hz, f0_confidence = spectral_ops.compute_f0(audio, sample_rate, frame_rate)
   ex = dict(ex)
   ex.update({
       'f0_hz': f0_hz.astype(np.float32),
@@ -105,7 +84,7 @@ def _add_f0_estimate(ex, frame_rate):
   return ex
 
 
-def _split_example(
+def split_example(
     ex, sample_rate, frame_rate, window_secs, hop_secs):
   """Splits example into windows, padding final window if needed."""
 
@@ -119,9 +98,8 @@ def _split_example(
     for window_end in range(window_size, len(sequence) + 1, hop_size):
       yield sequence[window_end-window_size:window_end]
 
-  for audio, audio_crepe, loudness_db, f0_hz, f0_confidence in zip(
+  for audio, loudness_db, f0_hz, f0_confidence in zip(
       get_windows(ex['audio'], sample_rate),
-      get_windows(ex['audio_crepe'], _CREPE_SAMPLE_RATE),
       get_windows(ex['loudness_db'], frame_rate),
       get_windows(ex['f0_hz'], frame_rate),
       get_windows(ex['f0_confidence'], frame_rate)):
@@ -130,14 +108,13 @@ def _split_example(
         'env_id': ex['env_id'],
         'source_id': ex['source_id'],
         'audio': audio,
-        'audio_crepe': audio_crepe,
         'loudness_db': loudness_db,
         'f0_hz': f0_hz,
         'f0_confidence': f0_confidence
     }
 
 
-def _float_dict_to_tfexample(float_dict):
+def float_dict_to_tfexample(float_dict):
   """Convert dictionary of float arrays to tf.train.Example proto."""
   return tf.train.Example(
       features=tf.train.Features(
@@ -186,17 +163,17 @@ def prepare_tfrecord(
     if frame_rate:
       examples = (
           examples
-          | beam.Map(_add_f0_estimate, frame_rate)
-          | beam.Map(_add_loudness, sample_rate, frame_rate))
+          | beam.Map(_add_f0_estimate, sample_rate, frame_rate)
+          | beam.Map(add_loudness, sample_rate, frame_rate))
 
     if window_secs:
       examples |= beam.FlatMap(
-          _split_example, sample_rate, frame_rate, window_secs, hop_secs)
+          split_example, sample_rate, frame_rate, window_secs, hop_secs)
 
     _ = (
         examples
         | beam.Reshuffle()
-        | beam.Map(_float_dict_to_tfexample)
+        | beam.Map(float_dict_to_tfexample)
         | beam.io.tfrecordio.WriteToTFRecord(
             output_tfrecord_path,
             num_shards=num_shards,

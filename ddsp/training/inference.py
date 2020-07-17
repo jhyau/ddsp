@@ -13,10 +13,20 @@
 # limitations under the License.
 
 # Lint as: python3
-r"""Separate file for storing the current version of DDSP.
+"""Constructs inference version of the models.
 
-Stored in a separate file so that setup.py can reference the version without
-pulling in all the dependencies in __init__.py.
+These models can be stored as SavedModels by calling model.save() and used
+just like other SavedModels.
 """
 
-__version__ = '0.8.0'
+from ddsp.training import models
+import tensorflow.compat.v2 as tf
+
+
+class AutoencoderInference(models.Autoencoder):
+  """Create an inference-only version of the model."""
+
+  @tf.function
+  def call(self, features):
+    """Run the core of the network, get predictions and loss."""
+    return super().call(features, training=False)

@@ -5,6 +5,19 @@ DSP can be subtle to get completely right, so we particularly appreciate the
 contributions of those with expertise in signal processing to help fix any
 mistakes we may have made 😄.
 
+# Versioning
+
+We'll do our best to keep the verison updated. This repo contains two code bases
+which makes versioning a bit tricky. The core code base `ddsp/` and a more
+experimental training code base `ddsp/training/` that is used for active
+research. We will thus adopt the following scheme for incrementing version:
+
+`vMajor.Minor.Revision`
+
+* Major: Breaking change in `ddsp/`
+* Minor: New feature in `ddsp/`, breaking change in `training/`
+* Revision: New feature in `training/`, minor bug fix anywhere
+
 ## Code Design Goals
 As much as we can, we would like the DDSP library to be approachable,
 well-tested, well-documented, and full of useful examples. Thus, PRs that add
@@ -26,9 +39,8 @@ use GitHub pull requests for this purpose. Consult
 information on using pull requests.
 
 Please be sure to test your code by running `pytest` and `pylint` before
-submitting a pull request for review. The easiest way to do this is to run
-`sh ci-test.sh` from the base directory. Note that code cannot be merged until
-these tests pass on [Travis](https://travis-ci.org/magenta/ddsp).
+submitting a pull request for review. Note that code cannot be merged until
+these tests pass on [GitHub Actions](https://github.com/magenta/ddsp/actions?query=workflow%3Abuild).
 
 
 ## Getting Started
