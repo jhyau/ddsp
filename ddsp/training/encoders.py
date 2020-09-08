@@ -236,4 +236,4 @@ class EmbeddingContextEncoder(ContextEncoder):
 
   def compute_context(self, conditioning):
     """Compute context from embedding."""
-    return self.embedding(tf.cast(conditioning[self.conditioning_key], dtype=tf.int32)
+    return self.embedding(tf.cast(conditioning[self.conditioning_key], dtype=tf.int32))
