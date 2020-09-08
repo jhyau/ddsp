@@ -27,16 +27,14 @@ class SpectralLossTest(tf.test.TestCase):
     loss_obj = losses.SpectralLoss(
         mag_weight=1.0,
         delta_time_weight=1.0,
-        delta_delta_time_weight=1.0,
         delta_freq_weight=1.0,
-        delta_delta_freq_weight=1.0,
         cumsum_freq_weight=1.0,
         logmag_weight=1.0,
         loudness_weight=1.0,
     )
 
-    input_audio = tf.random.uniform((3, 8000), dtype=tf.float32)
-    target_audio = tf.random.uniform((3, 8000), dtype=tf.float32)
+    input_audio = tf.ones((3, 8000), dtype=tf.float32)
+    target_audio = tf.ones((3, 8000), dtype=tf.float32)
 
     loss = loss_obj(input_audio, target_audio)
 
@@ -49,8 +47,8 @@ class PretrainedCREPEEmbeddingLossTest(tf.test.TestCase):
   def test_output_shape_is_correct(self):
     loss_obj = losses.PretrainedCREPEEmbeddingLoss()
 
-    input_audio = tf.random.uniform((3, 16000), dtype=tf.float32)
-    target_audio = tf.random.uniform((3, 16000), dtype=tf.float32)
+    input_audio = tf.ones((3, 16000), dtype=tf.float32)
+    target_audio = tf.ones((3, 16000), dtype=tf.float32)
 
     loss = loss_obj(input_audio, target_audio)
 

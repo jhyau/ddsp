@@ -12,6 +12,7 @@ The current supported models are variants of an audio autoencoder.
 *Unlike the base `ddsp/` library, this folder is actively modified for new
 experiments and has a higher chance of making breaking changes in the future.*
 
+_Functions and classes marked **EXPERIMENTAL** in their doc string are under active development and very likely to change. They should not be expected to be maintained in their current state._
 
 ## Modules
 
@@ -102,6 +103,12 @@ When training, all gin parameters in the
 will be saved to the `${MODEL_DIR}/operative_config-0.gin` file, which is then loaded for evaluation, sampling, or further training. The operative config is also visible as a text summary in tensorboard. See
 [this doc](https://github.com/google/gin-config/blob/master/docs/index.md#saving-gins-operative-config-to-a-file-and-tensorboard)
 for more details.
+
+### Backwards compatability
+
+
+For backwards compatability, we keep track of changes in function signatures in `update_gin_config.py`, which can be used to update old operative configs to work with the current library.
+
 
 ### Using Cloud TPU
 

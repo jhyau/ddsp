@@ -16,21 +16,18 @@
 """Library of FFT operations for loss functions and conditioning."""
 
 import crepe
+from ddsp.core import safe_log
 from ddsp.core import tf_float32
 import gin
 import librosa
 import numpy as np
 import tensorflow.compat.v2 as tf
 
-_CREPE_SAMPLE_RATE = 16000
+CREPE_SAMPLE_RATE = 16000
 _CREPE_FRAME_SIZE = 1024
 
 F0_RANGE = 127.0  # MIDI
 LD_RANGE = 120.0  # dB
-
-
-def safe_log(x, eps=1e-5):
-  return tf.math.log(x + eps)
 
 
 def stft(audio, frame_size=2048, overlap=0.75, pad_end=True):
@@ -162,6 +159,16 @@ def diff(x, axis=-1):
   return d
 
 
+def amplitude_to_db(amplitude, use_tf=False):
+  """Converts amplitude to dB."""
+  lib = tf if use_tf else np
+  log10 = (lambda x: tf.math.log(x) / tf.math.log(10.0)) if use_tf else np.log10
+  amin = 1e-20  # Avoid log(0) instabilities.
+  db = log10(lib.maximum(amin, amplitude))
+  db *= 20.0
+  return db
+
+
 @gin.register
 def compute_loudness(audio,
                      sample_rate=16000,
@@ -213,12 +220,9 @@ def compute_loudness(audio,
   stft_fn = stft if use_tf else stft_np
   s = stft_fn(audio, frame_size=n_fft, overlap=overlap, pad_end=True)
 
-  # Compute power
+  # Compute power.
   amplitude = lib.abs(s)
-  log10 = (lambda x: tf.math.log(x) / tf.math.log(10.0)) if use_tf else np.log10
-  amin = 1e-20  # Avoid log(0) instabilities.
-  power_db = log10(lib.maximum(amin, amplitude))
-  power_db *= 20.0
+  power_db = amplitude_to_db(amplitude, use_tf=use_tf)
 
   # Perceptual weighting.
   frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=n_fft)
@@ -286,6 +290,38 @@ def compute_f0(audio, sample_rate, frame_rate, viterbi=True):
   f0_confidence = np.nan_to_num(f0_confidence)   # Set nans to 0 in confidence
   f0_confidence = f0_confidence.astype(np.float32)
   return f0_hz, f0_confidence
+
+
+def compute_rms_energy(audio,
+                       sample_rate=16000,
+                       frame_rate=250,
+                       frame_size=2048):
+  """Compute root mean squared energy of audio."""
+  n_secs = len(audio) / float(sample_rate)  # `n_secs` can have milliseconds
+  expected_len = int(n_secs * frame_rate)
+
+  audio = tf_float32(audio)
+
+  hop_size = sample_rate // frame_rate
+  audio_frames = tf.signal.frame(audio, frame_size, hop_size, pad_end=True)
+  rms_energy = tf.reduce_mean(audio_frames**2.0, axis=-1)**0.5
+  return pad_or_trim_to_expected_length(rms_energy, expected_len, use_tf=True)
+
+
+def compute_power(audio,
+                  sample_rate=16000,
+                  frame_rate=250,
+                  frame_size=1024,
+                  range_db=LD_RANGE,
+                  ref_db=20.7):
+  """Compute power of audio in dB."""
+  # TODO(hanoih@): enable `use_tf` to be True or False like `compute_loudness`
+  rms_energy = compute_rms_energy(audio, sample_rate, frame_rate, frame_size)
+  power_db = amplitude_to_db(rms_energy**2, use_tf=True)
+  # Set dynamic range.
+  power_db -= ref_db
+  power_db = tf.maximum(power_db, -range_db)
+  return power_db
 
 
 def pad_or_trim_to_expected_length(vector,

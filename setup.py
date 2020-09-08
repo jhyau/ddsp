@@ -39,6 +39,7 @@ setuptools.setup(
     scripts=[],
     install_requires=[
         'absl-py',
+        'cloudml-hypertune',
         'crepe>=0.0.11',
         'future',
         'gin-config>=0.3.0',
@@ -50,6 +51,7 @@ setuptools.setup(
         'scipy',
         'six',
         'tensorflow',
+        'tensorflow-probability',
         # TODO(adarob): Switch to tensorflow_datasets once includes nsynth 2.3.
         'tfds-nightly',
     ],
@@ -66,7 +68,8 @@ setuptools.setup(
     entry_points={
         'console_scripts': [
             'ddsp_run = ddsp.training.ddsp_run:console_entry_point',
-            'ddsp_prepare_tfrecord = ddsp.training.data_preparation.prepare_tfrecord:console_entry_point',
+            'ddsp_prepare_tfrecord = ddsp.training.data_preparation.ddsp_prepare_tfrecord:console_entry_point',
+            'ddsp_generate_synthetic_dataset = ddsp.training.data_preparation.ddsp_generate_synthetic_dataset:console_entry_point',
         ],
     },
     classifiers=[

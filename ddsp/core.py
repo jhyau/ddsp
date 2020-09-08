@@ -102,14 +102,22 @@ def pad_axis(x, padding=(0, 0), axis=0, **pad_kwargs):
 # Math -------------------------------------------------------------------------
 def safe_divide(numerator, denominator, eps=1e-7):
   """Avoid dividing by zero by adding a small epsilon."""
-  safe_denominator = tf.where(
-      denominator == 0.0, eps * tf.ones_like(denominator), denominator)
+  safe_denominator = tf.where(denominator == 0.0, eps, denominator)
   return numerator / safe_denominator
 
 
-def log(x, base=2.0):
+def safe_log(x, eps=1e-5):
+  """Avoid taking the log of a non-positive number."""
+  safe_x = tf.where(x <= 0.0, eps, x)
+  return tf.math.log(safe_x)
+
+
+def logb(x, base=2.0, safe=False):
   """Logarithm with base as an argument."""
-  return tf.math.log(x) / tf.math.log(base)
+  if safe:
+    return safe_divide(safe_log(x), safe_log(base))
+  else:
+    return tf.math.log(x) / tf.math.log(base)
 
 
 def log_scale(x, min_x, max_x):
@@ -139,10 +147,9 @@ def midi_to_hz(notes: Number) -> Number:
 def hz_to_midi(frequencies: Number) -> Number:
   """TF-compatible hz_to_midi function."""
   frequencies = tf_float32(frequencies)
-  notes = 12.0 * (log(frequencies, 2.0) - log(440.0, 2.0)) + 69.0
-  # Map 0 Hz to MIDI 0 (Replace -inf with 0.)
-  cond = tf.equal(notes, -np.inf)
-  notes = tf.where(cond, 0.0, notes)
+  notes = 12.0 * (logb(frequencies, 2.0) - logb(440.0, 2.0)) + 69.0
+  # Map 0 Hz to MIDI 0 (Replace -inf MIDI with 0.)
+  notes = tf.where(tf.less_equal(frequencies, 0.0), 0.0, notes)
   return notes
 
 
@@ -200,7 +207,7 @@ def bark_to_hz(bark):
 
 def hz_to_mel(hz):
   """From Young et al. "The HTK book", Chapter 5.4."""
-  return 2595.0 * log(1.0 + hz / 700.0, 10.0)
+  return 2595.0 * logb(1.0 + hz / 700.0, 10.0)
 
 
 def mel_to_hz(mel):
@@ -617,13 +624,20 @@ def harmonic_to_sinusoidal(harm_amp, harm_dist, f0_hz, sample_rate=16000):
 
 
 # Additive Synthesizer ---------------------------------------------------------
+# TODO(jesseengel): Remove reliance on global injection for angular cumsum.
+@gin.configurable
 def angular_cumsum(angular_frequency, chunk_size=1000):
-  """Get phase by cummulative sumation of angular frequency.
+  """Get phase by cumulative sumation of angular frequency.
 
   Custom cumsum splits first axis into chunks to avoid accumulation error.
   Just taking tf.sin(tf.cumsum(angular_frequency)) leads to accumulation of
   phase errors that are audible for long segments or at high sample rates. Also,
   in reduced precision settings, cumsum can overflow the threshold.
+
+  During generation, if syntheiszed examples are longer than ~100k samples,
+  consider using angular_sum to avoid noticible phase errors. This version is
+  currently activated by global gin injection. Set the gin parameter
+  `oscillator_bank.use_angular_cumsum=True` to activate.
 
   Given that we are going to take the sin of the accumulated phase anyways, we
   don't care about the phase modulo 2 pi. This code chops the incoming frequency
@@ -706,13 +720,13 @@ def remove_above_nyquist(frequency_envelopes: tf.Tensor,
   return amplitude_envelopes
 
 
-# TODO(jesseengel): Remove reliance on global injection of chunk_size.
+# TODO(jesseengel): Remove reliance on global injection for angular cumsum.
 @gin.configurable
 def oscillator_bank(frequency_envelopes: tf.Tensor,
                     amplitude_envelopes: tf.Tensor,
                     sample_rate: int = 16000,
                     sum_sinusoids: bool = True,
-                    chunk_size: int = 0) -> tf.Tensor:
+                    use_angular_cumsum: bool = False) -> tf.Tensor:
   """Generates audio from sample-wise frequencies for a bank of oscillators.
 
   Args:
@@ -722,8 +736,13 @@ def oscillator_bank(frequency_envelopes: tf.Tensor,
       n_samples, n_sinusoids].
     sample_rate: Sample rate in samples per a second.
     sum_sinusoids: Add up audio from all the sinusoids.
-    chunk_size: Perform cumsum in chunks using angular_cumsum if chunk_size > 0.
-      Avoids accumulation of errors during summation but slower on accelerators.
+    use_angular_cumsum: If synthesized examples are longer than ~100k audio
+      samples, consider use_angular_cumsum to avoid accumulating noticible phase
+      errors due to the limited precision of tf.cumsum. Unlike the rest of the
+      library, this property can be set with global dependency injection with
+      gin. Set the gin parameter `oscillator_bank.use_angular_cumsum=True`
+      to activate. Avoids accumulation of errors for generation, but don't use
+      usually for training because it is slower on accelerators.
 
   Returns:
     wav: Sample-wise audio. Shape [batch_size, n_samples, n_sinusoids] if
@@ -742,9 +761,9 @@ def oscillator_bank(frequency_envelopes: tf.Tensor,
   omegas = omegas / float(sample_rate)  # rad / sample
 
   # Accumulate phase and synthesize.
-  if chunk_size > 0:
+  if use_angular_cumsum:
     # Avoids accumulation errors.
-    phases = angular_cumsum(omegas, chunk_size=chunk_size)
+    phases = angular_cumsum(omegas)
   else:
     phases = tf.cumsum(omegas, axis=1)
 
