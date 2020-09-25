@@ -81,7 +81,7 @@ def get_spectrogram(audio, rotate=False, size=1024):
   return mag
 
 
-def spectrogram_summary(audio, audio_gen, step, name=''):
+def spectrogram_summary(audio, audio_gen, step, name='', tag='spectrogram'):
   """Writes a summary of spectrograms for a batch of images."""
   specgram = lambda a: ddsp.spectral_ops.compute_logmag(tf_float32(a), size=768)
 
@@ -110,7 +110,7 @@ def spectrogram_summary(audio, audio_gen, step, name=''):
 
     # Format and save plot to image
     name = name + '_' if name else ''
-    tag = f'spectrogram/{name}_{i+1}'
+    tag = f'{tag}/{name}_{i+1}'
     fig_summary(tag, fig, step)
 
 
@@ -146,7 +146,6 @@ def f0_summary(f0_hz, f0_hz_predict, step, name='f0_midi'):
     ax1.set_title('predicted')
 
     # Format and save plot to image
-    name = name + '_' if name else ''
     tag = f'f0_midi/{name}_{i + 1}'
     fig_summary(tag, fig, step)
 

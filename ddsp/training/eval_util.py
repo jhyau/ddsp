@@ -113,12 +113,7 @@ def evaluate_or_sample(data_provider,
 
           # TODO(jesseengel): Find a way to add losses with training=False.
           audio = batch['audio']
-          audio_gen = None
-          model_output, losses = model(batch, return_losses=True, training=True)
-
-          if not isinstance(model_output, dict):
-            # TODO(emanilow): Assume if it's not a dict it's generated audio.
-            audio_gen = model_output
+          audio_gen, losses = model(batch, return_losses=True, training=True)
 
           outputs = model.get_controls(batch, training=True)
 
@@ -133,7 +128,6 @@ def evaluate_or_sample(data_provider,
 
             f0_twm_metrics = metrics.F0Metrics(
                 sample_rate=sample_rate, frame_rate=frame_rate, name='f0_twm')
-
 
             avg_losses = {
                 name: tf.keras.metrics.Mean(name=name, dtype=tf.float32)
@@ -180,7 +174,8 @@ def evaluate_or_sample(data_provider,
             logging.info('Writing summmaries for batch %d', batch_idx)
 
             if audio_gen is not None:
-              audio_gen = np.array(model_output)
+              audio_gen = np.array(audio_gen)
+
               # Add audio.
               summaries.audio_summary(
                   audio_gen, step, sample_rate, name='audio_generated')
