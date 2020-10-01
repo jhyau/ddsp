@@ -164,6 +164,8 @@ def rnn(dims, rnn_type, return_sequences=True):
 def embedding(vocab_size, output_dim):
   return tf.keras.layers.Embedding(vocab_size, output_dim)
 
+def temporal_cnn(filters, kernel_size):
+  return tf.keras.layers.Conv1D(filters, kernel_size, padding='causal', activation=tf.nn.leaky_relu)
 
 # ------------------ Utilities -------------------------------------------------
 @gin.register

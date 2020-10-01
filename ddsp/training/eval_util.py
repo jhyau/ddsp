@@ -149,20 +149,20 @@ def evaluate_or_sample(data_provider,
                   logging.info('Added f0 estimate from sinusoids.')
                   break
 
-              # If using a noisy sinusoidal model, infer f0 w/ two-way mismatch.
-              elif isinstance(processor, ddsp.synths.NoisySinusoidal):
-                # Run on CPU to avoid running out of memory (not expensive).
-                with tf.device('CPU'):
-                  processor_controls = outputs[processor.name]['controls']
-                  amps = processor_controls['amplitudes']
-                  freqs = processor_controls['frequencies']
-                  noise_ratios = processor_controls['noise_ratios']
-                  amps = amps * (1.0 - noise_ratios)
-                  twm = ddsp.losses.TWMLoss()
-                  # Treat all freqs as candidate f0s.
-                  outputs['f0_hz_twm'] = twm.predict_f0(freqs, freqs, amps)
-                  logging.info('Added f0 estimate from sinusoids.')
-                  break
+              # # If using a noisy sinusoidal model, infer f0 w/ two-way mismatch.
+              # elif isinstance(processor, ddsp.synths.NoisySinusoidal):
+              #   # Run on CPU to avoid running out of memory (not expensive).
+              #   with tf.device('CPU'):
+              #     processor_controls = outputs[processor.name]['controls']
+              #     amps = processor_controls['amplitudes']
+              #     freqs = processor_controls['frequencies']
+              #     noise_ratios = processor_controls['noise_ratios']
+              #     amps = amps * (1.0 - noise_ratios)
+              #     twm = ddsp.losses.TWMLoss()
+              #     # Treat all freqs as candidate f0s.
+              #     outputs['f0_hz_twm'] = twm.predict_f0(freqs, freqs, amps)
+              #     logging.info('Added f0 estimate from sinusoids.')
+              #     break
 
           has_f0_twm = ('f0_hz_twm' in outputs and 'f0_hz' in batch)
           has_f0 = ('f0_hz' in outputs and 'f0_hz' in batch)

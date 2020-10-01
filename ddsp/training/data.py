@@ -19,6 +19,7 @@ from absl import logging
 import gin
 import tensorflow.compat.v2 as tf
 import tensorflow_datasets as tfds
+import tensorflow_io as tfio
 
 _AUTOTUNE = tf.data.experimental.AUTOTUNE
 
@@ -363,4 +364,61 @@ class SyntheticNotes(TFRecordProvider):
                 [self.n_timesteps, self.n_mags], dtype=tf.float32),
     }
 
+@gin.register
+class VideoProvider(DataProvider):
+  """Class for reading video records and returning a dataset."""
 
+  def __init__(self,
+               file_pattern=None,
+               example_secs=4,
+               audio_sample_rate=16000,
+               video_frame_rate=30,
+               frame_rate=250):
+    """TFRecordProvider constructor."""
+    self.random_generator = tf.random.Generator.from_seed(1)
+
+    def map_fn(filename):
+      audio_filename = tf.strings.join([tf.strings.split(filename, '.')[0], 'wav'], '.')
+      audio = tf.io.read_file(audio_filename)
+      decoded_audio, audio_sample_rate = tf.audio.decode_wav(audio, desired_channels=1)
+      decoded_audio = tf.expand_dims(tf.squeeze(decoded_audio), axis=0)
+      video = tf.io.read_file(filename)
+      decoded_video = tfio.experimental.ffmpeg.decode_video(video)
+      video_frame_count = tf.shape(decoded_video)[0]
+      start_index = self.random_generator.uniform([], minval=0, maxval=(video_frame_count - self._video_length - self._video_padding_frames), dtype=tf.dtypes.int32)
+      clipped_video = decoded_video[start_index:(start_index + self._video_length), ...]
+      clipped_video = tf.expand_dims(clipped_video, axis=0)
+      audio_start = tf.cast(start_index * self._audio_length / self._video_length, dtype=tf.int32)
+      clipped_audio = decoded_audio[:, audio_start:(audio_start + self._audio_length)]
+      return tf.data.Dataset.from_tensor_slices({'frames':clipped_video, 'audio':clipped_audio})
+
+    self._file_pattern = file_pattern or self.default_file_pattern
+    self._audio_length = int(example_secs * audio_sample_rate)
+    self._video_length = int(example_secs * video_frame_rate)
+    self._video_padding_frames = 1
+    self._feature_length = int(example_secs * frame_rate)
+    super().__init__(audio_sample_rate, frame_rate)
+    self._data_format_map_fn = map_fn
+
+  @property
+  def default_file_pattern(self):
+    """Used if file_pattern is not provided to constructor."""
+    raise NotImplementedError(
+        'You must pass a "file_pattern" argument to the constructor or '
+        'choose a FileDataProvider with a default_file_pattern.')
+    
+  def get_dataset(self, shuffle=True):
+    """Read dataset.
+
+    Args:
+      shuffle: Whether to shuffle the files.
+
+    Returns:
+      dataset: A tf.dataset that reads from the TFRecord.
+    """
+    filenames = tf.data.Dataset.list_files(self._file_pattern, shuffle=shuffle)
+    dataset = filenames.interleave(
+        map_func=self._data_format_map_fn,
+        cycle_length=40,
+        num_parallel_calls=_AUTOTUNE)
+    return dataset

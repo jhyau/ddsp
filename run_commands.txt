@@ -1,0 +1,57 @@
+ddsp_run --mode=train --alsologtostderr --save_dir=/scr2/asmr_data/tapping/materials/custom_model --gin_file=models/ae_custom.gin --gin_file=datasets/tfrecord.gin --gin_param="TFRecordProvider.file_pattern='/scr2/asmr_data/tapping/materials/tfrecords_high_res/train.tfrecord-*'" --gin_param="train_util.train.num_steps=30000" --gin_param="train_util.train.steps_per_save=300" --gin_param="trainers.Trainer.checkpoints_to_keep=10"
+
+ddsp_run \
+  --mode=train \
+  --alsologtostderr \
+  --save_dir=/scr2/spclarke/asmr_data/models/video_model \
+  --gin_file=models/ae_video.gin \
+  --gin_file=datasets/video.gin \
+  --gin_param="VideoProvider.file_pattern='/scr2/spclarke/asmr_data/video/tapping/materials/*.mp4'" \
+  --gin_param="batch_size=2" \
+  --gin_param="train_util.train.num_steps=30000" \
+  --gin_param="train_util.train.steps_per_save=300" \
+  --gin_param="trainers.Trainer.checkpoints_to_keep=10"
+
+ddsp_run \
+  --mode=train \
+  --alsologtostderr \
+  --save_dir=/scr2/spclarke/asmr_data/models/video_scratching_model \
+  --gin_file=models/ae_video.gin \
+  --gin_file=datasets/video.gin \
+  --gin_param="VideoProvider.file_pattern='/scr2/spclarke/asmr_data/video/rubbing/materials/*.mp4'" \
+  --gin_param="batch_size=2" \
+  --gin_param="train_util.train.num_steps=30000" \
+  --gin_param="train_util.train.steps_per_save=300" \
+  --gin_param="trainers.Trainer.checkpoints_to_keep=10"
+
+ddsp_run \
+  --mode=train \
+  --alsologtostderr \
+  --save_dir=/scr2/spclarke/asmr_data/models/overfit_model_tcnn2 \
+  --gin_file=models/ae_video.gin \
+  --gin_file=datasets/video.gin \
+  --gin_param="VideoProvider.file_pattern='/scr2/spclarke/asmr_data/video/tapping/materials/IlJYaR2D7GU-012-0013.mp4'" \
+  --gin_param="batch_size=1" \
+  --gin_param="train_util.train.num_steps=30000" \
+  --gin_param="train_util.train.steps_per_save=300" \
+  --gin_param="trainers.Trainer.checkpoints_to_keep=10"
+
+ddsp_run \
+  --mode=sample \
+  --alsologtostderr \
+  --save_dir=/scr2/spclarke/asmr_data/models/overfit_model_tcnn2/sample \
+  --restore_dir=/scr2/spclarke/asmr_data/models/overfit_model_tcnn2 \
+  --gin_file=models/ae_video.gin \
+  --gin_file=datasets/video.gin \
+  --gin_param="VideoProvider.file_pattern='/scr2/spclarke/asmr_data/video/tapping/materials/IlJYaR2D7GU-012-0013.mp4'"\
+  --gin_param="sample.batch_size=1"
+
+ddsp_run \
+  --mode=sample \
+  --alsologtostderr \
+  --save_dir=/scr2/spclarke/asmr_data/models/overfit_model_tcnn/sample \
+  --restore_dir=/scr2/spclarke/asmr_data/models/overfit_model_tcnn \
+  --gin_file=models/ae_video.gin \
+  --gin_file=datasets/video.gin \
+  --gin_param="VideoProvider.file_pattern='/scr2/spclarke/asmr_data/video/rubbing/materials/SHweTOMBMws-03-*.mp4'"\
+  --gin_param="sample.batch_size=1"

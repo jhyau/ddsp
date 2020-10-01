@@ -50,8 +50,11 @@ class Encoder(tfkl.Layer):
           conditioning['f0_scaled'] * 127.0)
 
     z = self.compute_z(conditioning)
-    time_steps = int(conditioning['f0_scaled'].shape[1])
-    z = self.expand_z(z, time_steps)
+    if 'f0_scaled' in conditioning:
+      time_steps = int(conditioning['f0_scaled'].shape[1])
+      z = self.expand_z(z, time_steps)
+    elif hasattr(self, 'z_time_steps'):
+      z = self.expand_z(z, self.z_time_steps)
     if self.other_encoders:
       for enc in self.other_encoders:
         z = self.concat_encoding(enc(conditioning), z)
@@ -369,4 +372,48 @@ class SinusoidalToHarmonicEncoder(tfkl.Layer):
 
     return (harm_amp, harm_dist, f0_hz)
 
+@gin.register
+class VideoEncoder(Encoder):
+  """Generate latent variables with deep features from a video network."""
 
+  def __init__(self,
+               rnn_channels=512,
+               rnn_type='gru',
+               z_dims=32,
+               z_time_steps=250,
+               f0_encoder=None,
+               other_encoders=None,
+               name='mfcc_time_distrbuted_rnn_encoder'):
+    super().__init__(f0_encoder=f0_encoder, other_encoders=other_encoders, name=name)
+    self.z_time_steps = z_time_steps
+
+    # Layers.
+    self.z_norm = nn.Normalize('instance')
+    self.rnn = nn.temporal_cnn(rnn_channels, 10)
+    self.dense_out = nn.dense(z_dims)
+    self.frame_shape = (360, 640, 3)
+    self.cv_net = tf.keras.applications.ResNet50V2(include_top=False, weights='imagenet', input_shape=self.frame_shape, pooling=None)
+    #TODO(sclarke): Change this for fine tuning
+    self.cv_net.trainable = True
+    print('Vision network layer count: %i'%len(self.cv_net.layers))
+    # for l in self.cv_net.layers:
+    #   if not('block7' in l.name or 'top' in l.name):
+    #     l.trainable = False
+    self.final_layers = tf.keras.Sequential(layers=[
+                          tf.keras.layers.GlobalAveragePooling2D(),
+                        ])
+
+  def compute_z(self, conditioning):
+    batch_flat = tf.reshape(conditioning['frames'], (-1,) + self.frame_shape)
+    image_features = self.cv_net(batch_flat)
+    condensed = self.final_layers(image_features)
+    # rebatched = tf.reshape(condensed, tf.stack([tf.shape(conditioning['frames'])[0], tf.shape(conditioning['frames'])[1], tf.shape(condensed)[-1]], axis=0))
+    rebatched = tf.reshape(condensed, [1, 45, 2048])
+    # Normalize.
+    z = self.z_norm(rebatched[:, :, tf.newaxis, :])[:, :, 0, :]
+    # Run an RNN over the latents.
+    z = self.rnn(z)
+    # Bounce down to compressed z dimensions.
+    z = self.dense_out(z)
+    #TODO(sclarke):
+    return z

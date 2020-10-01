@@ -1,0 +1,10 @@
+# -*-Python-*-
+include 'datasets/base.gin'
+
+# Make dataset with ddsp/training/data_preparation/ddsp_prepare_tfrecord.py
+# --gin_param="VideoProvider.file_pattern='/path/to/dataset*.mp4'"
+
+# Dataset
+train.data_provider = @data.VideoProvider()
+evaluate.data_provider = @data.VideoProvider()
+sample.data_provider = @data.VideoProvider()

@@ -34,6 +34,7 @@ def at_least_3d(x):
 
 
 # ---------------------- Preprocess objects ------------------------------------
+@gin.register
 class Preprocessor(object):
   """Base class for chaining a series of preprocessing functions."""
 

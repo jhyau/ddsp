@@ -96,4 +96,17 @@ class RnnFcDecoder(Decoder):
     x = self.out_stack(x)
     return self.dense_out(x)
 
+@gin.register
+class TemporalCNNFcDecoder(RnnFcDecoder):
+  """Temporal and FC stacks for f0 and loudness."""
 
+  def __init__(self,
+               temporal_cnn_channels=512,
+               window_size=30,
+               ch=512,
+               layers_per_stack=3,
+               input_keys=('ld_scaled', 'f0_scaled', 'z'),
+               output_splits=(('amps', 1), ('harmonic_distribution', 40)),
+               name=None):
+    super().__init__(rnn_channels=1, ch=ch, layers_per_stack=layers_per_stack, input_keys=input_keys, output_splits=output_splits, name=name)
+    self.rnn = nn.temporal_cnn(temporal_cnn_channels, window_size)

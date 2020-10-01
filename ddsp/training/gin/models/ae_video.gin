@@ -1,0 +1,83 @@
+# -*-Python-*-
+# Autoencoder that decodes from (loudness, f0, z).
+# z = encoder(audio)
+
+import ddsp
+import ddsp.training
+
+EXAMPLE_SECONDS = 1.5
+AUDIO_SAMPLE_RATE = 44100
+AUDIO_SAMPLES = 66150
+VIDEO_FRAME_RATE = 30
+
+VideoProvider.example_secs = %EXAMPLE_SECONDS
+VideoProvider.audio_sample_rate = %AUDIO_SAMPLE_RATE
+VideoProvider.video_frame_rate = %VIDEO_FRAME_RATE
+
+# =====
+# Model
+# =====
+get_model.model = @models.Autoencoder()
+
+# Preprocessor
+Autoencoder.preprocessor = @preprocessing.Preprocessor()
+
+# Encoder
+Autoencoder.encoder = @encoders.VideoEncoder()
+VideoEncoder.rnn_channels = 512
+VideoEncoder.z_dims = 32
+VideoEncoder.z_time_steps = 175
+
+# Decoder
+# Autoencoder.decoder = @decoders.RnnFcDecoder()
+Autoencoder.decoder = @decoders.TemporalCNNFcDecoder()
+# RnnFcDecoder.rnn_channels = 512
+# RnnFcDecoder.rnn_type = 'gru'
+TemporalCnnFcDecoder.temporal_cnn_channels = 1024
+TemporalCnnFcDecoder.window_size=20
+TemporalCNNFcDecoder.ch = 512
+TemporalCNNFcDecoder.layers_per_stack = 3
+TemporalCNNFcDecoder.input_keys = ('z')
+TemporalCNNFcDecoder.output_splits = (('amps', 1),
+                               ('harmonic_distribution', 100),
+                               ('f0_hz', 1),
+                               ('noise_magnitudes', 65))
+
+# Losses
+Autoencoder.losses = [
+    @losses.SpectralLoss(),
+]
+SpectralLoss.loss_type = 'L1'
+SpectralLoss.mag_weight = 1.0
+SpectralLoss.logmag_weight = 1.0
+
+# ==============
+# ProcessorGroup
+# ==============
+
+Autoencoder.processor_group = @processors.ProcessorGroup()
+
+ProcessorGroup.dag = [
+  (@synths.Additive(),
+    ['amps', 'harmonic_distribution', 'f0_hz']),
+  (@synths.FilteredNoise(),
+    ['noise_magnitudes']),
+  (@processors.Add(),
+    ['filtered_noise/signal', 'additive/signal']),
+]
+
+# Additive Synthesizer
+Additive.name = 'additive'
+Additive.sample_rate = %AUDIO_SAMPLE_RATE
+Additive.n_samples = %AUDIO_SAMPLES
+Additive.normalize_below_nyquist = True
+Additive.scale_fn = @core.exp_sigmoid
+
+# Filtered Noise Synthesizer
+FilteredNoise.name = 'filtered_noise'
+FilteredNoise.n_samples = %AUDIO_SAMPLES
+FilteredNoise.window_size = 0
+FilteredNoise.scale_fn = @core.exp_sigmoid
+
+# Add
+Add.name = 'add'
