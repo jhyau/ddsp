@@ -41,8 +41,18 @@ def make_iterable(x):
   """Wrap in a list if not iterable, return empty list if None."""
   if x is None:
     return []
+  elif isinstance(x, (np.ndarray, tf.Tensor)):
+    return [x]
   else:
     return x if isinstance(x, collections.Iterable) else [x]
+
+
+def to_dict(x):
+  """Converts list to a dictionary with enumerated keys."""
+  if isinstance(x, dict):
+    return x
+  else:
+    return {str(i): o for i, o in enumerate(make_iterable(x))}
 
 
 def copy_if_tf_function(x):
@@ -108,7 +118,7 @@ def safe_divide(numerator, denominator, eps=1e-7):
 
 def safe_log(x, eps=1e-5):
   """Avoid taking the log of a non-positive number."""
-  safe_x = tf.where(x <= 0.0, eps, x)
+  safe_x = tf.where(x <= eps, eps, x)
   return tf.math.log(safe_x)
 
 

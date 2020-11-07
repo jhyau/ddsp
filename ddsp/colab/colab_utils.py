@@ -18,20 +18,19 @@
 import base64
 import io
 import pickle
-import tempfile
 
 import ddsp
 import ddsp.training
 from IPython import display
-import librosa
+import note_seq
 import numpy as np
-from pydub import AudioSegment
 from scipy import stats
 from scipy.io import wavfile
 import tensorflow.compat.v2 as tf
 
 from google.colab import files
 from google.colab import output
+
 download = files.download
 
 DEFAULT_SAMPLE_RATE = ddsp.spectral_ops.CREPE_SAMPLE_RATE
@@ -143,9 +142,8 @@ def record(seconds=3, sample_rate=DEFAULT_SAMPLE_RATE, normalize_db=0.1):
 def audio_bytes_to_np(wav_data,
                       sample_rate=DEFAULT_SAMPLE_RATE,
                       normalize_db=0.1):
-  """Convert audio file data (in bytes) into a numpy array.
+  """Convert audio file data (in bytes) into a numpy array using Pydub.
 
-  Saves to a tempfile and loads with librosa.
   Args:
     wav_data: A byte stream of audio data.
     sample_rate: Resample recorded audio to this sample rate.
@@ -155,17 +153,8 @@ def audio_bytes_to_np(wav_data,
   Returns:
     An array of the recorded audio at sample_rate.
   """
-  # Parse and normalize the audio.
-  audio = AudioSegment.from_file(io.BytesIO(wav_data))
-  audio.remove_dc_offset()
-  if normalize_db is not None:
-    audio.normalize(headroom=normalize_db)
-  # Save to tempfile and load with librosa.
-  with tempfile.NamedTemporaryFile(suffix='.wav') as temp_wav_file:
-    fname = temp_wav_file.name
-    audio.export(fname, format='wav')
-    audio_np, unused_sr = librosa.load(fname, sr=sample_rate)
-  return audio_np.astype(np.float32)
+  return note_seq.audio_io.wav_data_to_samples_pydub(
+      wav_data=wav_data, sample_rate=sample_rate, normalize_db=normalize_db)
 
 
 def upload(sample_rate=DEFAULT_SAMPLE_RATE, normalize_db=None):

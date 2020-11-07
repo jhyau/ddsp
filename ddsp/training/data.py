@@ -21,6 +21,7 @@ import tensorflow.compat.v2 as tf
 import tensorflow_datasets as tfds
 import tensorflow_io as tfio
 
+
 _AUTOTUNE = tf.data.experimental.AUTOTUNE
 
 
