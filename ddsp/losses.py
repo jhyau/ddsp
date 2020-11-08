@@ -32,6 +32,16 @@ tfd = tfp.distributions
 tfkl = tf.keras.layers
 
 
+# ---------------------- Base Class --------------------------------------------
+class Loss(tfkl.Layer):
+  """Base class. Duck typing: Losses just must implement get_losses_dict()."""
+
+  def get_losses_dict(self, *args, **kwargs):
+    """Returns a dictionary of losses for the model."""
+    loss = self(*args, **kwargs)
+    return {self.name: loss}
+
+
 # ---------------------- Losses ------------------------------------------------
 def mean_difference(target, value, loss_type='L1', weights=None):
   """Common loss functions.
@@ -63,7 +73,7 @@ def mean_difference(target, value, loss_type='L1', weights=None):
 
 
 @gin.register
-class SpectralLoss(tfkl.Layer):
+class SpectralLoss(Loss):
   """Multi-scale spectrogram loss.
 
   This loss is the bread-and-butter of comparing two audio signals. It offers
@@ -125,8 +135,7 @@ class SpectralLoss(tfkl.Layer):
       spectrogram_op = functools.partial(spectral_ops.compute_mag, size=size)
       self.spectrogram_ops.append(spectrogram_op)
 
-  def call(self, target_audio, audio):
-
+  def call(self, target_audio, audio, weights=None):
     loss = 0.0
 
     diff = spectral_ops.diff
@@ -139,41 +148,41 @@ class SpectralLoss(tfkl.Layer):
 
       # Add magnitude loss.
       if self.mag_weight > 0:
-        loss += self.mag_weight * mean_difference(target_mag, value_mag,
-                                                  self.loss_type)
+        loss += self.mag_weight * mean_difference(
+            target_mag, value_mag, self.loss_type, weights=weights)
 
       if self.delta_time_weight > 0:
         target = diff(target_mag, axis=1)
         value = diff(value_mag, axis=1)
         loss += self.delta_time_weight * mean_difference(
-            target, value, self.loss_type)
+            target, value, self.loss_type, weights=weights)
 
       if self.delta_freq_weight > 0:
         target = diff(target_mag, axis=2)
         value = diff(value_mag, axis=2)
         loss += self.delta_freq_weight * mean_difference(
-            target, value, self.loss_type)
+            target, value, self.loss_type, weights=weights)
 
       # TODO(kyriacos) normalize cumulative spectrogram
       if self.cumsum_freq_weight > 0:
         target = cumsum(target_mag, axis=2)
         value = cumsum(value_mag, axis=2)
         loss += self.cumsum_freq_weight * mean_difference(
-            target, value, self.loss_type)
+            target, value, self.loss_type, weights=weights)
 
       # Add logmagnitude loss, reusing spectrogram.
       if self.logmag_weight > 0:
         target = spectral_ops.safe_log(target_mag)
         value = spectral_ops.safe_log(value_mag)
-        loss += self.logmag_weight * mean_difference(target, value,
-                                                     self.loss_type)
+        loss += self.logmag_weight * mean_difference(
+            target, value, self.loss_type, weights=weights)
 
     if self.loudness_weight > 0:
       target = spectral_ops.compute_loudness(target_audio, n_fft=2048,
                                              use_tf=True)
       value = spectral_ops.compute_loudness(audio, n_fft=2048, use_tf=True)
-      loss += self.loudness_weight * mean_difference(target, value,
-                                                     self.loss_type)
+      loss += self.loudness_weight * mean_difference(
+          target, value, self.loss_type, weights=weights)
 
     return loss
 
@@ -182,7 +191,7 @@ class SpectralLoss(tfkl.Layer):
 # Peceptual Losses
 # ------------------------------------------------------------------------------
 @gin.register
-class EmbeddingLoss(tfkl.Layer):
+class EmbeddingLoss(Loss):
   """Embedding loss for a given pretrained model.
 
   Using these "perceptual" loss functions will help encourage better matching
@@ -346,7 +355,7 @@ def freq_loss(f_hz, f_hz_target, loss_type='L1', weights=None):
 
 
 @gin.register
-class FilteredNoiseConsistencyLoss(tfkl.Layer):
+class FilteredNoiseConsistencyLoss(Loss):
   """Consistency loss for synthesizer controls.
 
   EXPERIMENTAL
@@ -363,7 +372,7 @@ class FilteredNoiseConsistencyLoss(tfkl.Layer):
 
 
 @gin.register
-class HarmonicConsistencyLoss(tfkl.Layer):
+class HarmonicConsistencyLoss(Loss):
   """Consistency loss for synthesizer controls.
 
   EXPERIMENTAL
@@ -414,7 +423,7 @@ class HarmonicConsistencyLoss(tfkl.Layer):
 # Sinusoidal Consistency Losses
 # ------------------------------------------------------------------------------
 @gin.register
-class WassersteinConsistencyLoss(tfkl.Layer):
+class WassersteinConsistencyLoss(Loss):
   """Compare similarity of two traces of sinusoids using wasserstein distance.
 
   EXPERIMENTAL
@@ -519,7 +528,7 @@ def wasserstein_distance(u_values, v_values, u_weights, v_weights, p=1.0):
 
 
 @gin.register
-class KDEConsistencyLoss(tfkl.Layer):
+class KDEConsistencyLoss(Loss):
   """Compare similarity of two traces of sinusoids using kernels.
 
   EXPERIMENTAL
@@ -649,7 +658,7 @@ class KDEConsistencyLoss(tfkl.Layer):
 # Differentiable Two-way Mismatch Loss
 # ------------------------------------------------------------------------------
 @gin.register
-class TWMLoss(tfkl.Layer):
+class TWMLoss(Loss):
   """Two-way Mismatch, encourages sinusoids to be harmonics best f0 candidate.
 
   EXPERIMENTAL
