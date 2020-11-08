@@ -14,6 +14,7 @@
 
 # Lint as: python3
 """Library of functions to help loading data."""
+import os
 
 from absl import logging
 import gin
@@ -365,7 +366,57 @@ class SyntheticNotes(TFRecordProvider):
     }
 
 @gin.register
-class VideoProvider(DataProvider):
+class AudioProvider(DataProvider):
+  """Class for reading wav files and returning a dataset."""
+
+  def __init__(self,
+               file_pattern=None,
+               example_secs=4,
+               audio_sample_rate=16000,
+               frame_rate=250):
+    self.random_generator = tf.random.Generator.from_seed(1)
+
+    self._file_pattern = file_pattern or self.default_file_pattern
+    self._audio_length = int(example_secs * audio_sample_rate)
+    self._feature_length = int(example_secs * frame_rate)
+    super().__init__(audio_sample_rate, frame_rate)
+    
+    def map_fn(filename):
+      audio = tf.io.read_file(filename)
+      decoded_audio, audio_sample_rate = tf.audio.decode_wav(audio, desired_channels=1)
+      audio_frame_count = tf.shape(decoded_audio)[0]
+      decoded_audio = tf.expand_dims(tf.squeeze(decoded_audio), axis=0)
+      start_index = self.random_generator.uniform([], minval=0, maxval=(audio_frame_count - self._audio_length), dtype=tf.dtypes.int32)
+      clipped_audio = decoded_audio[:, start_index:(start_index + self._audio_length)]
+      return tf.data.Dataset.from_tensor_slices({'audio':clipped_audio})
+
+    self._data_format_map_fn = map_fn
+
+  @property
+  def default_file_pattern(self):
+    """Used if file_pattern is not provided to constructor."""
+    raise NotImplementedError(
+        'You must pass a "file_pattern" argument to the constructor or '
+        'choose a FileDataProvider with a default_file_pattern.')
+
+  def get_dataset(self, shuffle=True):
+    """Read dataset.
+
+    Args:
+      shuffle: Whether to shuffle the files.
+
+    Returns:
+      dataset: A tf.dataset that reads from the TFRecord.
+    """
+    filenames = tf.data.Dataset.list_files(self._file_pattern, shuffle=shuffle)
+    dataset = filenames.interleave(
+        map_func=self._data_format_map_fn,
+        cycle_length=40,
+        num_parallel_calls=_AUTOTUNE)
+    return dataset
+
+@gin.register
+class VideoProvider(AudioProvider):
   """Class for reading video records and returning a dataset."""
 
   def __init__(self,
@@ -374,8 +425,12 @@ class VideoProvider(DataProvider):
                audio_sample_rate=16000,
                video_frame_rate=30,
                frame_rate=250):
-    """TFRecordProvider constructor."""
-    self.random_generator = tf.random.Generator.from_seed(1)
+    super().__init__( file_pattern=file_pattern,
+                  example_secs=example_secs,
+                  audio_sample_rate=audio_sample_rate,
+                  frame_rate=frame_rate)
+    self._video_length = int(example_secs * video_frame_rate)
+    self._video_padding_frames = 1
 
     def map_fn(filename):
       audio_filename = tf.strings.join([tf.strings.split(filename, '.')[0], 'wav'], '.')
@@ -392,21 +447,55 @@ class VideoProvider(DataProvider):
       clipped_audio = decoded_audio[:, audio_start:(audio_start + self._audio_length)]
       return tf.data.Dataset.from_tensor_slices({'frames':clipped_video, 'audio':clipped_audio})
 
-    self._file_pattern = file_pattern or self.default_file_pattern
-    self._audio_length = int(example_secs * audio_sample_rate)
-    self._video_length = int(example_secs * video_frame_rate)
-    self._video_padding_frames = 1
-    self._feature_length = int(example_secs * frame_rate)
-    super().__init__(audio_sample_rate, frame_rate)
     self._data_format_map_fn = map_fn
 
-  @property
-  def default_file_pattern(self):
-    """Used if file_pattern is not provided to constructor."""
-    raise NotImplementedError(
-        'You must pass a "file_pattern" argument to the constructor or '
-        'choose a FileDataProvider with a default_file_pattern.')
-    
+@gin.register
+class VISProvider(DataProvider):
+  """Class for reading video records and returning a dataset."""
+
+  def __init__(self,
+               data_dir=None,
+               test_mode=False,
+               event_filter='hit',
+               examples_per_clip=1,
+               example_secs=0.5,
+               audio_sample_rate=96000,
+               video_frame_rate=30,
+               frame_rate=250):
+    super().__init__(audio_sample_rate, frame_rate)
+    video_length = int(example_secs * video_frame_rate)
+    audio_length = int(1.0 * video_length / video_frame_rate * audio_sample_rate)
+    self.test_mode = test_mode
+    self.data_dir = data_dir
+
+    def map_fn(filename):
+      metadata = tf.io.read_file(filename + '_times.txt')
+      metadata = tf.strings.split(tf.strings.split(metadata, sep='\n'), sep=' ')
+      event_times = tf.strings.to_number(metadata[:-1, :1], out_type=tf.float32)
+      event_times = event_times.to_tensor()
+      event_times = tf.squeeze(event_times)
+      if event_filter:
+        mask = tf.equal(metadata[:, 2:3], event_filter).to_tensor()
+        mask = tf.reshape(mask, [-1])
+        event_times = tf.boolean_mask(event_times, mask)
+      event_indices = tf.random.uniform([], maxval=tf.shape(event_times)[0], dtype=tf.int32)
+      event_times = tf.gather(event_times, event_indices)
+
+      video = tf.io.read_file(filename + '_denoised_thumb.mp4')
+      decoded_video = tfio.experimental.ffmpeg.decode_video(video)
+      video_start_index = tf.cast((event_times - (example_secs / 2.0)) * video_frame_rate, tf.int32)
+      clipped_video = decoded_video[video_start_index:(video_start_index + video_length), ...]
+      clipped_video = tf.expand_dims(clipped_video, axis=0)
+
+      audio = tf.io.read_file(filename + '_denoised.wav')
+      decoded_audio, metadata_audio_sample_rate = tf.audio.decode_wav(audio, desired_channels=1)
+      decoded_audio = tf.expand_dims(tf.squeeze(decoded_audio), axis=0)
+      audio_start_index = tf.cast(video_start_index / video_frame_rate * audio_sample_rate, tf.int32)
+      clipped_audio = decoded_audio[:, audio_start_index:(audio_start_index+audio_length)]
+      return tf.data.Dataset.from_tensor_slices({'frames':clipped_video, 'audio':clipped_audio})
+
+    self._data_format_map_fn = map_fn
+
   def get_dataset(self, shuffle=True):
     """Read dataset.
 
@@ -416,9 +505,17 @@ class VideoProvider(DataProvider):
     Returns:
       dataset: A tf.dataset that reads from the TFRecord.
     """
-    filenames = tf.data.Dataset.list_files(self._file_pattern, shuffle=shuffle)
+    if self.test_mode:
+      file_list = tf.io.read_file(os.path.join(self.data_dir, 'test.txt'))
+    else:
+      file_list = tf.io.read_file(os.path.join(self.data_dir, 'train.txt'))
+    file_list = tf.strings.split(file_list, sep='\n')[:-1]
+    filenames = os.path.join(self.data_dir, '') + file_list
+    filenames = tf.data.Dataset.from_tensor_slices(filenames)
+    if shuffle:
+      filenames = filenames.shuffle(10000)
     dataset = filenames.interleave(
         map_func=self._data_format_map_fn,
-        cycle_length=40,
+        cycle_length=10,
         num_parallel_calls=_AUTOTUNE)
     return dataset

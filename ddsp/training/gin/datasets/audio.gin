@@ -1,0 +1,9 @@
+# -*-Python-*-
+include 'datasets/base.gin'
+
+# --gin_param="AudioProvider.file_pattern='/path/to/dataset*.wav'"
+
+# Dataset
+train.data_provider = @data.AudioProvider()
+evaluate.data_provider = @data.AudioProvider()
+sample.data_provider = @data.AudioProvider()

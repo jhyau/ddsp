@@ -89,14 +89,15 @@ class MfccTimeDistributedRnnEncoder(Encoder):
                rnn_channels=512,
                rnn_type='gru',
                z_dims=32,
+               mfcc_time_steps=250,
                z_time_steps=250,
                f0_encoder=None,
                other_encoders=None,
                name='mfcc_time_distrbuted_rnn_encoder'):
     super().__init__(f0_encoder=f0_encoder, other_encoders=other_encoders, name=name)
-    if z_time_steps not in [63, 125, 250, 500, 1000]:
+    if mfcc_time_steps not in [63, 125, 250, 500, 1000]:
       raise ValueError(
-          '`z_time_steps` currently limited to 63,125,250,500 and 1000')
+          '`mfcc_time_steps` currently limited to 63,125,250,500 and 1000')
     self.z_audio_spec = {
         '63': {
             'fft_size': 2048,
@@ -119,8 +120,11 @@ class MfccTimeDistributedRnnEncoder(Encoder):
             'overlap': 0.75
         }
     }
-    self.fft_size = self.z_audio_spec[str(z_time_steps)]['fft_size']
-    self.overlap = self.z_audio_spec[str(z_time_steps)]['overlap']
+    self.fft_size = self.z_audio_spec[str(mfcc_time_steps)]['fft_size']
+    self.overlap = self.z_audio_spec[str(mfcc_time_steps)]['overlap']
+    if z_time_steps:
+      print('Z time steps: %i'%z_time_steps)
+      self.z_time_steps = z_time_steps
 
     # Layers.
     self.z_norm = nn.Normalize('instance')
@@ -417,3 +421,20 @@ class VideoEncoder(Encoder):
     z = self.dense_out(z)
     #TODO(sclarke):
     return z
+
+@gin.register
+class TemporalCnnEncoder(MfccTimeDistributedRnnEncoder):
+  """Use MFCCs as latent variables, distribute across timesteps."""
+
+  def __init__(self,
+               temporal_cnn_channels=512,
+               z_dims=32,
+               z_time_steps=250,
+               mfcc_time_steps=63,
+               window_size=10,
+               f0_encoder=None,
+               other_encoders=None,
+               name='temporal_cnn_encoder'):
+    super().__init__(rnn_channels=1, z_dims=z_dims, z_time_steps=mfcc_time_steps, f0_encoder=f0_encoder, other_encoders=other_encoders, name=name)
+    self.rnn = nn.temporal_cnn(temporal_cnn_channels, window_size)
+    self.z_time_steps = z_time_steps

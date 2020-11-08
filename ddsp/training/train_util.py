@@ -205,7 +205,7 @@ def train(data_provider,
       step = trainer.step  # Step is not iteration if restarting a model.
 
       # Take a step.
-      losses = trainer.train_step(dataset_iter)
+      losses = trainer.train_step(next(dataset_iter))
 
       # Create training loss metrics when starting/restarting training.
       if iteration == 0:
