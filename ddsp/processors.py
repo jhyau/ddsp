@@ -180,7 +180,6 @@ class Add(Processor):
                  signal_two: tf.Tensor) -> tf.Tensor:
     return signal_one + signal_two
 
-
 @gin.register
 class Mix(Processor):
   """Constant-power crossfade between two signals."""
@@ -213,6 +212,7 @@ class Mix(Processor):
 
     mix_level = tf.nn.sigmoid(nn_out_mix_level)
     mix_level = core.resample(mix_level, n_time_one)
+    mix_level = tf.reshape(mix_level, (signal_one.shape[0], n_time_one))
     return {
         'signal_one': signal_one,
         'signal_two': signal_two,
@@ -236,3 +236,19 @@ class Mix(Processor):
     mix_level_one = tf.sqrt(tf.abs(mix_level))
     mix_level_two = 1.0 - tf.sqrt(tf.abs(mix_level - 1.0))
     return mix_level_one * signal_one + mix_level_two * signal_two
+
+@gin.register
+class Convolve(Processor):
+  """Convolve two signals."""
+
+  def __init__(self, name: Text = 'convolve'):
+    super().__init__(name=name)
+
+  def get_controls(self, impulse_profile: tf.Tensor,
+                   impulse_response: tf.Tensor) -> TensorDict:
+    """Just pass signals through."""
+    return {'impulse_profile': impulse_profile, 'impulse_response': impulse_response}
+
+  def get_signal(self, impulse_profile: tf.Tensor,
+                 impulse_response: tf.Tensor) -> tf.Tensor:
+    return core.fft_convolve(impulse_profile, impulse_response)

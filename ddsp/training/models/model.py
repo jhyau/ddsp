@@ -50,6 +50,8 @@ class Model(tf.keras.Model):
     if not return_losses:
       return outputs
     else:
+      if self.losses:
+        self._losses_dict['model_loss'] = tf.reduce_sum(self.losses)
       self._losses_dict['total_loss'] = tf.reduce_sum(
           list(self._losses_dict.values()))
       return outputs, self._losses_dict

@@ -24,7 +24,7 @@ from ddsp.training import cloud
 import gin
 import tensorflow.compat.v2 as tf
 
-
+import wandb
 
 # ---------------------- Helper Functions --------------------------------------
 def get_strategy(tpu='', cluster_config=''):
@@ -155,7 +155,10 @@ def train(data_provider,
           save_dir='/tmp/ddsp',
           restore_dir='/tmp/ddsp',
           early_stop_loss_value=None,
-          report_loss_to_hypertune=False):
+          report_loss_to_hypertune=False,
+          wandb_logging=False,
+          validation_provider=None,
+          validation_steps=10):
   """Main training loop.
 
   Args:
@@ -179,6 +182,11 @@ def train(data_provider,
   dataset = data_provider.get_batch(batch_size, shuffle=True, repeats=-1)
   dataset = trainer.distribute_dataset(dataset)
   dataset_iter = iter(dataset)
+
+  if validation_provider:
+    validation_set = validation_provider.get_batch(batch_size, shuffle=True, repeats=-1)
+    validation_set = trainer.distribute_dataset(validation_set)
+    validation_set_iter = iter(validation_set)
 
   # Build model, easiest to just run forward pass.
   trainer.build(next(dataset_iter))
@@ -224,6 +232,9 @@ def train(data_provider,
         log_str += '{}: {:.2f}\t'.format(k, v)
       logging.info(log_str)
 
+      if wandb_logging:
+        wandb.log(losses, step=step.numpy())
+
       # Write Summaries.
       if step % steps_per_summary == 0 and save_dir:
         # Speed.
@@ -235,6 +246,19 @@ def train(data_provider,
         for k, metric in avg_losses.items():
           tf.summary.scalar('losses/{}'.format(k), metric.result(), step=step)
           metric.reset_states()
+
+      if step % validation_steps == 0 and validation_provider:
+        validation_batch = next(validation_set_iter)
+        losses_list = []
+        for i in range(5):
+          _, val_losses = trainer.model(validation_batch, return_losses=True, training=True)
+          losses_list.append(val_losses)
+        val_losses = { ('valid_' + k) : sum(x[k] for x in losses_list)/len(losses_list) for k in losses_list[0] }
+        wandb.log(val_losses, step=step.numpy())
+        log_str = 'step: {}\t'.format(int(step.numpy()))
+        for k, v in val_losses.items():
+          log_str += '{}: {:.2f}\t'.format(k, v)
+        logging.info(log_str)
 
       # Report metrics for hyperparameter tuning if enabled.
       if report_loss_to_hypertune:

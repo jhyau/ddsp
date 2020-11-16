@@ -210,8 +210,12 @@ class FcStack(tf.keras.Sequential):
 def embedding(vocab_size, output_dim):
   return tf.keras.layers.Embedding(vocab_size, output_dim)
 
-def temporal_cnn(filters, kernel_size):
-  return tf.keras.layers.Conv1D(filters, kernel_size, padding='causal', activation=tf.nn.leaky_relu)
+def temporal_cnn(filters, kernel_size, causal=True):
+  if causal:
+    padding = 'causal'
+  else:
+    padding = 'same'
+  return tf.keras.layers.Conv1D(filters, kernel_size, padding=padding, activation=tf.nn.leaky_relu)
 
 @gin.register
 class Rnn(tfkl.Layer):

@@ -278,3 +278,157 @@ class Sinusoidal(processors.Processor):
     return signal
 
 
+@gin.register
+class Impact(processors.Processor):
+  """Synthesize an impact profile with a Gaussian force contact model."""
+
+  def __init__(self,
+               n_samples=64000,
+               sample_rate=16000,
+               mag_scale_fn=core.exp_sigmoid,
+               resample_method='window',
+               max_tau=.001,
+               max_impact_frequency=30,
+               name='impact'):
+    super().__init__(name=name)
+    self.n_samples = n_samples
+    self.sample_rate = sample_rate
+    self.mag_scale_fn = mag_scale_fn
+    self.resample_method = resample_method
+    self.max_tau = max_tau
+    self.max_impact_frequency=max_impact_frequency
+
+  def get_controls(self, magnitudes, stdevs, taus, tau_multiplier):
+    """Convert network output tensors into a dictionary of synthesizer controls.
+
+    Args:
+      magnitudes: 3-D Tensor of synthesizer controls, of shape
+        [batch, time, 1].
+      stdevs: 3-D Tensor of synthesizer controls, of shape
+        [batch, time, 1].
+      taus: 3-D Tensor of synthesizer controls, of shape
+        [batch, time, 1].
+      tau_multiplier: 3-D Tensor of synthesizer controls, of shape
+        [batch, 1, 1].
+
+    Returns:
+      controls: Dictionary of tensors of synthesizer controls.
+    """
+    # Scale the inputs.
+    if self.mag_scale_fn is not None:
+      noise = tf.abs(stdevs) * tf.random.normal(stdevs.shape, dtype=tf.float32)
+      magnitudes = self.mag_scale_fn(magnitudes + noise)
+      taus = self.max_tau * self.mag_scale_fn(2.0 * tau_multiplier) * self.mag_scale_fn(0.5 * taus) + 1.0/self.sample_rate
+
+    return {'magnitudes': magnitudes,
+            'stdevs': stdevs,
+            'taus': taus}
+
+
+  def hertz_gaussian(self, peak_times, tau):
+    t = tf.reshape(tf.range(self.n_samples, dtype = tf.float32) / self.sample_rate, (1, -1, 1))
+    impulses =  tf.exp(-6/tf.square(tau) * tf.square(t - peak_times - tau / 2))
+    return impulses
+
+  def get_signal(self, magnitudes, stdevs, taus):
+    """Synthesize audio with sinusoidal synthesizer from controls.
+
+    Args:
+      magnitudes: magnitude tensor of shape [batch, n_frames, 1].
+        Expects float32 that is strictly positive.
+      stdevs: Tensor of shape [batch, n_frames, 1].
+        Expects float32 in that is strictly positive.
+      taus: Tensor of shape [batch, n_frames, 1].
+        Expects float32 in that is strictly positive.
+
+    Returns:
+      signal: A tensor of the force impulse profile of shape [batch, n_samples].
+    """
+    # Create sample-wise envelopes.
+    magnitude_envelopes = core.resample(magnitudes, self.n_samples,
+                                        method=self.resample_method)
+    taus = core.resample(taus, self.n_samples,
+                          method=self.resample_method)
+
+    window_size = int(self.sample_rate / self.max_impact_frequency)
+    vals, inds = tf.nn.max_pool_with_argmax(tf.expand_dims(magnitude_envelopes, axis=1), window_size, window_size, 'SAME')
+    peak_times = tf.squeeze(tf.cast(inds / self.sample_rate, dtype=tf.float32), axis=3)
+    scale_heights = tf.squeeze(vals, axis=3)
+    basis_impulses = self.hertz_gaussian(peak_times, taus)
+    signal = tf.reduce_sum(scale_heights * basis_impulses, axis=2)
+    return signal
+
+@gin.register
+class ModalFIR(processors.Processor):
+  """Synthesize a modal FIR with exponentially decaying sinusoidal oscillators."""
+
+  def __init__(self,
+               n_samples=64000,
+               sample_rate=16000,
+               amp_scale_fn=core.exp_sigmoid,
+               amp_resample_method='window',
+               freq_scale_fn=core.frequencies_sigmoid,
+               hz_max=8000.0,
+               initial_bias=-1.5,
+               name='modal_fir'):
+    super().__init__(name=name)
+    self.n_samples = n_samples
+    self.sample_rate = sample_rate
+    self.amp_scale_fn = amp_scale_fn
+    self.amp_resample_method = amp_resample_method
+    self.freq_scale_fn = freq_scale_fn
+    self.hz_max = hz_max
+    self.initial_bias = initial_bias
+
+  def get_controls(self, gains, frequencies, dampings):
+    """Convert network output tensors into a dictionary of synthesizer controls.
+
+    Args:
+      gains: 3-D Tensor of synthesizer controls, of shape
+        [batch, time, n_sinusoids].
+      frequencies: 3-D Tensor of synthesizer controls, of shape
+        [batch, time, n_sinusoids].
+      dampings: 3-D Tensor of synthesizer controls, of shape
+        [batch, time, n_sinusoids].
+
+    Returns:
+      controls: Dictionary of tensors of synthesizer controls.
+    """
+    # Scale the inputs.
+    if self.amp_scale_fn is not None:
+      gains = 0.01 * self.amp_scale_fn(4.0 * gains + self.initial_bias)
+      # dampings = 10.0 / self.amp_scale_fn(4.0 * dampings + self.initial_bias)
+      dampings = 0.05 * self.freq_scale_fn(dampings, hz_min=0.0, hz_max=100000.0)
+
+    if self.freq_scale_fn is not None:
+      frequencies = self.freq_scale_fn(frequencies, hz_min=0.0, hz_max=self.hz_max)
+      gains = core.remove_above_nyquist(frequencies,
+                                             gains,
+                                             self.sample_rate)
+    return {'gains': gains,
+            'frequencies': frequencies,
+            'dampings': dampings}
+
+  def get_signal(self, gains, frequencies, dampings):
+    """Synthesize audio with sinusoidal synthesizer from controls.
+
+    Args:
+      gains: Gains tensor of shape [batch, n_frames, n_sinusoids].
+        Expects float32 that is strictly positive.
+      frequencies: Tensor of shape [batch, n_frames, n_sinusoids].
+        Expects float32 in Hertz that is strictly positive.
+      dampings: Tensor of shape [batch, n_frames, n_sinusoids].
+        Expects float32 in Hertz that is strictly positive.
+
+    Returns:
+      signal: A tensor of exponentially decaying modal frequencies of shape [batch, n_samples].
+    """
+    # Create sample-wise envelopes.
+    t = tf.expand_dims(tf.cast(tf.range(self.n_samples)/self.sample_rate, dtype=tf.float32), axis=1)
+    amplitude_envelopes = gains * tf.exp(-dampings * t)
+    frequency_envelopes = frequencies * tf.ones_like(amplitude_envelopes)
+    ir_half = core.oscillator_bank(frequency_envelopes=frequency_envelopes,
+                                   amplitude_envelopes=amplitude_envelopes,
+                                   sample_rate=self.sample_rate)
+    signal = tf.concat((tf.zeros_like(ir_half), ir_half), axis=1)
+    return signal

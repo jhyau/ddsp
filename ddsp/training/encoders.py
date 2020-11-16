@@ -57,7 +57,7 @@ class Encoder(tfkl.Layer):
       z = self.expand_z(z, self.z_time_steps)
     if self.other_encoders:
       for enc in self.other_encoders:
-        z = self.concat_encoding(enc(conditioning), z)
+        z = self.concat_encoding(enc(conditioning)[enc.output_key], z)
     conditioning['z'] = z
     return conditioning
 
@@ -91,6 +91,7 @@ class MfccTimeDistributedRnnEncoder(Encoder):
                z_dims=32,
                mfcc_time_steps=250,
                z_time_steps=250,
+               sample_rate=16000,
                f0_encoder=None,
                other_encoders=None,
                name='mfcc_time_distrbuted_rnn_encoder'):
@@ -122,6 +123,7 @@ class MfccTimeDistributedRnnEncoder(Encoder):
     }
     self.fft_size = self.z_audio_spec[str(mfcc_time_steps)]['fft_size']
     self.overlap = self.z_audio_spec[str(mfcc_time_steps)]['overlap']
+    self.sample_rate = sample_rate
     if z_time_steps:
       print('Z time steps: %i'%z_time_steps)
       self.z_time_steps = z_time_steps
@@ -129,16 +131,18 @@ class MfccTimeDistributedRnnEncoder(Encoder):
     # Layers.
     self.z_norm = nn.Normalize('instance')
     self.rnn = nn.Rnn(rnn_channels, rnn_type)
+    self.tcnn = nn.temporal_cnn(rnn_channels, 7, causal=False)
     self.dense_out = tfkl.Dense(z_dims)
 
   def compute_z(self, conditioning):
     mfccs = spectral_ops.compute_mfcc(
         conditioning['audio'],
-        lo_hz=20.0,
-        hi_hz=8000.0,
+        sample_rate=self.sample_rate,
+        lo_hz=4.0,
+        hi_hz=16000.0,
         fft_size=self.fft_size,
         mel_bins=128,
-        mfcc_bins=30,
+        mfcc_bins=40,
         overlap=self.overlap,
         pad_end=True)
 
@@ -146,6 +150,8 @@ class MfccTimeDistributedRnnEncoder(Encoder):
     z = self.z_norm(mfccs[:, :, tf.newaxis, :])[:, :, 0, :]
     # Run an RNN over the latents.
     z = self.rnn(z)
+    # Run a tcnn over latents.
+    z = self.tcnn(z)
     # Bounce down to compressed z dimensions.
     z = self.dense_out(z)
     return z
@@ -230,20 +236,40 @@ class EmbeddingContextEncoder(ContextEncoder):
   """Embeddings from a dictionary of embeddings."""
 
   def __init__(self,
-               dimensions,
+               vocab_size,
+               vector_length,
                conditioning_key,
+               output_key,
                name='embedding_context_encoder'):
     super().__init__(name=name)
-    # Note that dimensions are ([length of dictionary], [length of embedding vector])
-    self.dimensions = dimensions
+    self.vocab_size = vocab_size
+    self.vector_length = vector_length
     self.conditioning_key = conditioning_key
+    self.output_key = output_key
 
     # Layers.
-    self.embedding = nn.embedding(*dimensions)
+    self.embedding = nn.embedding(self.vocab_size, self.vector_length)
 
   def compute_context(self, conditioning):
     """Compute context from embedding."""
     return self.embedding(tf.cast(conditioning[self.conditioning_key], dtype=tf.int32))
+
+  def call(self, conditioning):
+    """Updates conditioning with embedding."""
+    conditioning[self.output_key] = self.compute_context(conditioning)
+    return conditioning
+
+class MultiEncoder(Encoder):
+  """Runs a list of encoders in order."""
+
+  def __init__(self, encoder_list, name='multi_encoder'):
+    super().__init__(name=name)
+    self.encoder_list = encoder_list
+
+  def call(self, conditioning):
+    for enc in self.encoder_list:
+      conditioning = enc(conditioning)
+    return conditioning
 
 # Transcribing Autoencoder Encoders --------------------------------------------
 @gin.register

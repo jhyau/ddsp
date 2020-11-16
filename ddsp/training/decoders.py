@@ -66,6 +66,7 @@ class RnnFcDecoder(Decoder):
                layers_per_stack=3,
                input_keys=('ld_scaled', 'f0_scaled', 'z'),
                output_splits=(('amps', 1), ('harmonic_distribution', 40)),
+               activity_regularizer=None,
                name=None):
     super().__init__(output_splits=output_splits, name=name)
     stack = lambda: nn.FcStack(ch, layers_per_stack)
@@ -75,7 +76,7 @@ class RnnFcDecoder(Decoder):
     self.input_stacks = [stack() for k in self.input_keys]
     self.rnn = nn.Rnn(rnn_channels, rnn_type)
     self.out_stack = stack()
-    self.dense_out = tfkl.Dense(self.n_out)
+    self.dense_out = tfkl.Dense(self.n_out, activity_regularizer=activity_regularizer)
 
     # Backwards compatability.
     self.f_stack = self.input_stacks[0] if len(self.input_stacks) >= 1 else None
@@ -110,3 +111,55 @@ class TemporalCNNFcDecoder(RnnFcDecoder):
                name=None):
     super().__init__(rnn_channels=1, ch=ch, layers_per_stack=layers_per_stack, input_keys=input_keys, output_splits=output_splits, name=name)
     self.rnn = nn.temporal_cnn(temporal_cnn_channels, window_size)
+
+@gin.register
+class FcDecoder(Decoder):
+  """Fully connected network decoder."""
+
+  def __init__(self,
+               fc_units=512,
+               hidden_layers=3,
+               input_keys=('object_embedding'),
+               output_splits=(('frequencies', 200), ('gains', 200), ('dampings', 200)),
+               activity_regularizer=None,
+               name=None):
+    super().__init__(output_splits=output_splits, name=name)
+    self.out_stack = nn.FcStack(fc_units, hidden_layers)
+    self.input_keys = input_keys
+    self.dense_out = tfkl.Dense(self.n_out, activity_regularizer=activity_regularizer)
+
+  def decode(self, conditioning):
+    # Initial processing.
+    inputs = [conditioning[k] for k in self.input_keys]
+    # Concatenate.
+    x = tf.concat(inputs, axis=-1)
+    # Final processing.
+    x = self.out_stack(x)
+    return self.dense_out(x)
+
+
+@gin.register
+class MultiDecoder(Decoder):
+  """Combine multiple decoders into one."""
+
+  def __init__(self,
+               decoder_list,
+               name=None):
+    output_splits = []
+    [output_splits.extend(d.output_splits) for d in decoder_list]
+    super().__init__(output_splits=output_splits, name=name)
+    self.decoder_list = decoder_list
+
+  def call(self, conditioning):
+    """Updates conditioning with dictionary of decoder outputs."""
+    conditioning = core.copy_if_tf_function(conditioning)
+
+    for d in self.decoder_list:
+      x = d.decode(conditioning)
+      outputs = nn.split_to_dict(x, d.output_splits)
+
+      if isinstance(outputs, dict):
+        conditioning.update(outputs)
+      else:
+        raise ValueError('Decoder must output a dictionary of signals.')
+    return conditioning

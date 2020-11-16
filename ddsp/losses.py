@@ -86,10 +86,12 @@ class SpectralLoss(Loss):
                fft_sizes=(2048, 1024, 512, 256, 128, 64),
                loss_type='L1',
                mag_weight=1.0,
+               mel_weight=0.0,
                delta_time_weight=0.0,
                delta_freq_weight=0.0,
                cumsum_freq_weight=0.0,
                logmag_weight=0.0,
+               logmel_weight=0.0,
                loudness_weight=0.0,
                name='spectral_loss'):
     """Constructor, set loss weights of various components.
@@ -124,10 +126,12 @@ class SpectralLoss(Loss):
     self.fft_sizes = fft_sizes
     self.loss_type = loss_type
     self.mag_weight = mag_weight
+    self.mel_weight = mel_weight
     self.delta_time_weight = delta_time_weight
     self.delta_freq_weight = delta_freq_weight
     self.cumsum_freq_weight = cumsum_freq_weight
     self.logmag_weight = logmag_weight
+    self.logmel_weight = logmel_weight
     self.loudness_weight = loudness_weight
 
     self.spectrogram_ops = []
@@ -176,6 +180,18 @@ class SpectralLoss(Loss):
         value = spectral_ops.safe_log(value_mag)
         loss += self.logmag_weight * mean_difference(
             target, value, self.loss_type, weights=weights)
+
+      if self.mel_weight > 0 or self.logmel_weight > 0:
+        target_mel = spectral_ops.compute_mel_from_mag(target_mag, lo_hz=2.0, bins=None, fft_size=loss_op.keywords['size'])
+        value_mel = spectral_ops.compute_mel_from_mag(value_mag, lo_hz=2.0, bins=None, fft_size=loss_op.keywords['size'])
+        if self.mel_weight > 0:
+          loss += self.mel_weight * mean_difference(
+              target_mel, value_mel, self.loss_type, weights=weights)
+        if self.logmel_weight > 0:
+          target_logmel = spectral_ops.safe_log(target_mel)
+          value_logmel = spectral_ops.safe_log(value_mel)
+          loss += self.logmel_weight * mean_difference(
+              target_logmel, value_logmel, self.loss_type, weights=weights)
 
     if self.loudness_weight > 0:
       target = spectral_ops.compute_loudness(target_audio, n_fft=2048,
@@ -900,5 +916,3 @@ class TWMLoss(Loss):
     if as_midi:
       harmonics = hz_to_midi(harmonics)
     return harmonics
-
-

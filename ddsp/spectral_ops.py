@@ -72,7 +72,6 @@ def compute_mag(audio, size=2048, overlap=0.75, pad_end=True):
   mag = tf.abs(stft(audio, frame_size=size, overlap=overlap, pad_end=pad_end))
   return tf_float32(mag)
 
-
 @gin.register
 def compute_mel(audio,
                 sample_rate=16000,
@@ -86,12 +85,29 @@ def compute_mel(audio,
   mag = compute_mag(audio, fft_size, overlap, pad_end)
   # num_spectrogram_bins = int(mag.shape[-1])
   num_spectrogram_bins = tf.cast(tf.shape(mag)[-1], tf.int32)
+  if not bins:
+    bins = int(fft_size / 4) + 1
   linear_to_mel_matrix = tf.signal.linear_to_mel_weight_matrix(
       bins, num_spectrogram_bins, sample_rate, lo_hz, hi_hz)
   mel = tf.tensordot(mag, linear_to_mel_matrix, 1)
   mel.set_shape(mag.shape[:-1].concatenate(linear_to_mel_matrix.shape[-1:]))
   return mel
 
+@gin.register
+def compute_mel_from_mag(mag,
+                         sample_rate=16000,
+                         lo_hz=0.0,
+                         hi_hz=8000.0,
+                         bins=64,
+                         fft_size=2048):
+  num_spectrogram_bins = tf.cast(tf.shape(mag)[-1], tf.int32)
+  if not bins:
+    bins = int(fft_size / 4) + 1
+  linear_to_mel_matrix = tf.signal.linear_to_mel_weight_matrix(
+      bins, num_spectrogram_bins, sample_rate, lo_hz, hi_hz)
+  mel = tf.tensordot(mag, linear_to_mel_matrix, 1)
+  mel.set_shape(mag.shape[:-1].concatenate(linear_to_mel_matrix.shape[-1:]))
+  return mel
 
 @gin.register
 def compute_logmag(audio, size=2048, overlap=0.75, pad_end=True):

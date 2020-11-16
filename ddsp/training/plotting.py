@@ -35,7 +35,8 @@ def specplot(audio,
   if len(audio.shape) == 2:
     audio = audio[0]
 
-  logmag = spectral_ops.compute_logmag(core.tf_float32(audio), size=size)
+  # logmag = spectral_ops.compute_logmag(core.tf_float32(audio), size=size)
+  logmag = spectral_ops.compute_logmel(core.tf_float32(audio), lo_hz=8.0, bins=None, fft_size=size)
   if rotate:
     logmag = np.rot90(logmag)
   # Plotting.

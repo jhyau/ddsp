@@ -14,6 +14,7 @@
 
 # Lint as: python3
 """Library of functions to help loading data."""
+import glob
 import os
 
 from absl import logging
@@ -374,13 +375,17 @@ class AudioProvider(DataProvider):
                file_pattern=None,
                example_secs=4,
                audio_sample_rate=16000,
-               frame_rate=250):
+               frame_rate=250,
+               append_material_id=False):
     self.random_generator = tf.random.Generator.from_seed(1)
 
     self._file_pattern = file_pattern or self.default_file_pattern
     self._audio_length = int(example_secs * audio_sample_rate)
     self._feature_length = int(example_secs * frame_rate)
     super().__init__(audio_sample_rate, frame_rate)
+    self.append_material_id = append_material_id
+    if self.append_material_id:
+      self.video_table, self.material_table = self.get_tables(self._file_pattern)
     
     def map_fn(filename):
       audio = tf.io.read_file(filename)
@@ -389,9 +394,35 @@ class AudioProvider(DataProvider):
       decoded_audio = tf.expand_dims(tf.squeeze(decoded_audio), axis=0)
       start_index = self.random_generator.uniform([], minval=0, maxval=(audio_frame_count - self._audio_length), dtype=tf.dtypes.int32)
       clipped_audio = decoded_audio[:, start_index:(start_index + self._audio_length)]
+      if self.append_material_id:
+        f = tf.strings.split(filename, '/')[-1]
+        video_id = tf.strings.split(f, '-')[0]
+        material_id = tf.strings.split(f, '-')[1]
+        material_id = self.material_table.lookup(tf.strings.join((video_id, material_id), '-'))
+        material_id = tf.expand_dims(material_id, axis=0)
+        video_id = self.video_table.lookup(video_id)
+        video_id = tf.expand_dims(video_id, axis=0)
+        return tf.data.Dataset.from_tensor_slices({'audio':clipped_audio, 'video_id':[video_id], 'material_id':[material_id]})
       return tf.data.Dataset.from_tensor_slices({'audio':clipped_audio})
 
     self._data_format_map_fn = map_fn
+
+  @staticmethod
+  def get_tables(file_pattern):
+    file_paths = glob.glob(file_pattern)
+    filenames = [os.path.split(f)[1] for f in file_paths]
+    video_ids = set([f.split('-')[0] for f in filenames])
+    material_ids = set(['-'.join(f.split('-')[:2]) for f in filenames])
+    video_keys_tensor = tf.constant(sorted(list(video_ids)), dtype=tf.string)
+    video_values_tensor = tf.range(len(video_ids), dtype=tf.int32)
+    video_table = tf.lookup.StaticHashTable(
+    tf.lookup.KeyValueTensorInitializer(video_keys_tensor, video_values_tensor), -1)
+    material_keys_tensor = tf.constant(sorted(list(material_ids)), dtype=tf.string)
+    material_values_tensor = tf.range(len(material_ids), dtype=tf.int32)
+    material_table = tf.lookup.StaticHashTable(
+    tf.lookup.KeyValueTensorInitializer(material_keys_tensor, material_values_tensor), -1)
+    return video_table, material_table
+
 
   @property
   def default_file_pattern(self):
