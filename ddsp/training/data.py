@@ -392,7 +392,7 @@ class AudioProvider(DataProvider):
       decoded_audio, audio_sample_rate = tf.audio.decode_wav(audio, desired_channels=1)
       audio_frame_count = tf.shape(decoded_audio)[0]
       decoded_audio = tf.expand_dims(tf.squeeze(decoded_audio), axis=0)
-      start_index = self.random_generator.uniform([], minval=0, maxval=(audio_frame_count - self._audio_length), dtype=tf.dtypes.int32)
+      start_index = self.random_generator.uniform([], minval=0, maxval=(audio_frame_count - self._audio_length) + 1, dtype=tf.dtypes.int32)
       clipped_audio = decoded_audio[:, start_index:(start_index + self._audio_length)]
       if self.append_material_id:
         f = tf.strings.split(filename, '/')[-1]
@@ -402,7 +402,7 @@ class AudioProvider(DataProvider):
         material_id = tf.expand_dims(material_id, axis=0)
         video_id = self.video_table.lookup(video_id)
         video_id = tf.expand_dims(video_id, axis=0)
-        return tf.data.Dataset.from_tensor_slices({'audio':clipped_audio, 'video_id':[video_id], 'material_id':[material_id]})
+        return tf.data.Dataset.from_tensor_slices({'audio':clipped_audio, 'video_id':[video_id], 'material_id':[material_id], 'filename': [filename]})
       return tf.data.Dataset.from_tensor_slices({'audio':clipped_audio})
 
     self._data_format_map_fn = map_fn
