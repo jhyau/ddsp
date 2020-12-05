@@ -21,9 +21,40 @@ import gin
 import tensorflow.compat.v2 as tf
 
 
-# TODO(jesseengel): Rename Additive to Harmonic.
 @gin.register
-class Additive(processors.Processor):
+class TensorToAudio(processors.Processor):
+  """Identity "synth" returning input samples with channel dimension removed."""
+
+  def __init__(self, name='tensor_to_audio'):
+    super().__init__(name=name)
+
+  def get_controls(self, samples):
+    """Convert network output tensors into a dictionary of synthesizer controls.
+
+    Args:
+      samples: 3-D Tensor of "controls" (really just samples), of shape
+        [batch, time, 1].
+
+    Returns:
+      Dictionary of tensors of synthesizer controls.
+    """
+    return {'samples': samples}
+
+  def get_signal(self, samples):
+    """"Synthesize" audio by removing channel dimension from input samples.
+
+    Args:
+      samples: 3-D Tensor of "controls" (really just samples), of shape
+        [batch, time, 1].
+
+    Returns:
+      A tensor of audio with shape [batch, time].
+    """
+    return tf.squeeze(samples, 2)
+
+
+@gin.register
+class Harmonic(processors.Processor):
   """Synthesize audio with a bank of harmonic sinusoidal oscillators."""
 
   def __init__(self,
@@ -31,7 +62,7 @@ class Additive(processors.Processor):
                sample_rate=16000,
                scale_fn=core.exp_sigmoid,
                normalize_below_nyquist=True,
-               name='additive'):
+               name='harmonic'):
     super().__init__(name=name)
     self.n_samples = n_samples
     self.sample_rate = sample_rate
@@ -78,7 +109,7 @@ class Additive(processors.Processor):
             'f0_hz': f0_hz}
 
   def get_signal(self, amplitudes, harmonic_distribution, f0_hz):
-    """Synthesize audio with additive synthesizer from controls.
+    """Synthesize audio with harmonic synthesizer from controls.
 
     Args:
       amplitudes: Amplitude tensor of shape [batch, n_frames, 1]. Expects
@@ -191,7 +222,7 @@ class Wavetable(processors.Processor):
              'f0_hz': f0_hz}
 
   def get_signal(self, amplitudes, wavetables, f0_hz):
-    """Synthesize audio with additive synthesizer from controls.
+    """Synthesize audio with wavetable synthesizer from controls.
 
     Args:
       amplitudes: Amplitude tensor of shape [batch, n_frames, 1]. Expects

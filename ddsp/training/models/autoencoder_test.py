@@ -33,7 +33,7 @@ class AutoencoderTest(parameterized.TestCase, tf.test.TestCase):
     """Create some dummy input data for the chain."""
     super().setUp()
     # Create inputs.
-    self.n_batch = 4
+    self.n_batch = 1
     self.n_frames = 1001
     self.n_samples = 64000
     inputs = {
@@ -45,7 +45,6 @@ class AutoencoderTest(parameterized.TestCase, tf.test.TestCase):
 
   @parameterized.named_parameters(
       ('nsynth_ae', 'papers/iclr2020/nsynth_ae.gin'),
-      ('nsynth_ae_abs', 'papers/iclr2020/nsynth_ae_abs.gin'),
       ('solo_instrument', 'papers/iclr2020/solo_instrument.gin'),
   )
   def test_build_model(self, gin_file):
