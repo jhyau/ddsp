@@ -14,6 +14,7 @@
 
 # Lint as: python3
 """Library of synthesizer functions."""
+import math
 
 from ddsp import core
 from ddsp import processors
@@ -318,7 +319,7 @@ class Impact(processors.Processor):
                sample_rate=16000,
                mag_scale_fn=core.exp_sigmoid,
                resample_method='window',
-               max_tau=.001,
+               max_tau=.0005,
                max_impact_frequency=30,
                name='impact'):
     super().__init__(name=name)
@@ -349,10 +350,9 @@ class Impact(processors.Processor):
     if self.mag_scale_fn is not None:
       noise = tf.abs(stdevs) * tf.random.normal(stdevs.shape, dtype=tf.float32)
       magnitudes = self.mag_scale_fn(magnitudes + noise)
-      taus = self.max_tau * self.mag_scale_fn(2.0 * tau_multiplier) * self.mag_scale_fn(0.5 * taus) + 1.0/self.sample_rate
+      taus = self.max_tau * tf.nn.sigmoid(2.0 * tau_multiplier) * tf.nn.sigmoid(taus) + 1.0/self.sample_rate
 
     return {'magnitudes': magnitudes,
-            'stdevs': stdevs,
             'taus': taus}
 
 
@@ -361,7 +361,7 @@ class Impact(processors.Processor):
     impulses =  tf.exp(-6/tf.square(tau) * tf.square(t - peak_times - tau / 2))
     return impulses
 
-  def get_signal(self, magnitudes, stdevs, taus):
+  def get_signal(self, magnitudes, taus):
     """Synthesize audio with sinusoidal synthesizer from controls.
 
     Args:
@@ -376,7 +376,13 @@ class Impact(processors.Processor):
       signal: A tensor of the force impulse profile of shape [batch, n_samples].
     """
     # Create sample-wise envelopes.
-    magnitude_envelopes = core.resample(magnitudes, self.n_samples,
+    diff_order = 1
+    magnitude_diffs = tf.experimental.numpy.diff(magnitudes, n=diff_order, axis=1)
+    magnitude_diffs = tf.concat((tf.zeros((tf.shape(magnitude_diffs)[0], int(math.floor(diff_order/2)), 1), dtype=tf.float32),
+                                magnitude_diffs,
+                                tf.zeros((tf.shape(magnitude_diffs)[0], int(math.ceil(diff_order/2)), 1), dtype=tf.float32)), axis=1)
+    # magnitude_envelopes = core.resample(magnitudes, self.n_samples,
+    magnitude_envelopes = core.resample(((-1)**diff_order) *  magnitude_diffs, self.n_samples,
                                         method=self.resample_method)
     taus = core.resample(taus, self.n_samples,
                           method=self.resample_method)
@@ -385,7 +391,11 @@ class Impact(processors.Processor):
     vals, inds = tf.nn.max_pool_with_argmax(tf.expand_dims(magnitude_envelopes, axis=1), window_size, window_size, 'SAME')
     peak_times = tf.squeeze(tf.cast(inds / self.sample_rate, dtype=tf.float32), axis=3)
     scale_heights = tf.squeeze(vals, axis=3)
-    basis_impulses = self.hertz_gaussian(peak_times, taus)
+    taus = tf.expand_dims(taus, axis=1)
+    b,w,h,c = taus.get_shape().as_list()
+    taus_pooled = tf.gather(tf.reshape(taus,shape= [b*w*h*c,]),inds)
+    taus_pooled = tf.squeeze(taus_pooled, axis=3)
+    basis_impulses = self.hertz_gaussian(peak_times, taus_pooled)
     signal = tf.reduce_sum(scale_heights * basis_impulses, axis=2)
     return signal
 
@@ -427,12 +437,13 @@ class ModalFIR(processors.Processor):
     """
     # Scale the inputs.
     if self.amp_scale_fn is not None:
-      gains = 0.01 * self.amp_scale_fn(4.0 * gains + self.initial_bias)
+      gains = 0.001 * self.amp_scale_fn(gains + self.initial_bias, exponent=3.0)
       # dampings = 10.0 / self.amp_scale_fn(4.0 * dampings + self.initial_bias)
-      dampings = 0.05 * self.freq_scale_fn(dampings, hz_min=0.0, hz_max=100000.0)
+      # dampings = 0.05 * self.freq_scale_fn(dampings, hz_min=0.0, hz_max=100000.0)
+      dampings = 10000 * self.amp_scale_fn(dampings + self.initial_bias, exponent=6.0)
 
     if self.freq_scale_fn is not None:
-      frequencies = self.freq_scale_fn(frequencies, hz_min=0.0, hz_max=self.hz_max)
+      frequencies = self.freq_scale_fn(frequencies, hz_min=10.0, hz_max=self.hz_max)
       gains = core.remove_above_nyquist(frequencies,
                                              gains,
                                              self.sample_rate)

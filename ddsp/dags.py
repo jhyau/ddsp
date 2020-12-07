@@ -135,7 +135,7 @@ class DAGLayer(tfkl.Layer):
   @gin.configurable(whitelist=['verbose'])  # For debugging.
   def run_dag(self,
               inputs: TensorDict,
-              verbose: bool = True,
+              verbose: bool = False,
               **kwargs) -> TensorDict:
     """Connects and runs submodules of dag.
 

@@ -15,6 +15,7 @@
 # Lint as: python3
 """Library of decoder layers."""
 
+import ddsp
 from ddsp.training import nn
 import gin
 import tensorflow as tf
@@ -72,7 +73,7 @@ class TemporalCNNFcDecoder(RnnFcDecoder):
     self.rnn = nn.temporal_cnn(temporal_cnn_channels, window_size)
 
 @gin.register
-class FcDecoder(Decoder):
+class FcDecoder(nn.OutputSplitsLayer):
   """Fully connected network decoder."""
 
   def __init__(self,
@@ -80,45 +81,39 @@ class FcDecoder(Decoder):
                hidden_layers=3,
                input_keys=('object_embedding'),
                output_splits=(('frequencies', 200), ('gains', 200), ('dampings', 200)),
-               activity_regularizer=None,
-               name=None):
-    super().__init__(output_splits=output_splits, name=name)
-    self.out_stack = nn.FcStack(fc_units, hidden_layers)
-    self.input_keys = input_keys
-    self.dense_out = tfkl.Dense(self.n_out, activity_regularizer=activity_regularizer)
+               **kwargs):
+    super().__init__(
+        input_keys=input_keys, output_splits=output_splits, **kwargs)
+    stack = lambda: nn.FcStack(fc_units, hidden_layers)
+    self.input_stacks = [stack() for k in self.input_keys]
+    self.out_stack = stack()
 
-  def decode(self, conditioning):
+  def compute_output(self, *inputs):
     # Initial processing.
-    inputs = [conditioning[k] for k in self.input_keys]
-    # Concatenate.
+    inputs = [stack(x) for stack, x in zip(self.input_stacks, inputs)]
     x = tf.concat(inputs, axis=-1)
+
     # Final processing.
-    x = self.out_stack(x)
-    return self.dense_out(x)
+    return self.out_stack(x)
 
 
 @gin.register
-class MultiDecoder(Decoder):
+class MultiDecoder(tfkl.Layer):
   """Combine multiple decoders into one."""
 
   def __init__(self,
                decoder_list,
-               name=None):
-    output_splits = []
-    [output_splits.extend(d.output_splits) for d in decoder_list]
-    super().__init__(output_splits=output_splits, name=name)
+               **kwargs):
+    super().__init__(**kwargs)
     self.decoder_list = decoder_list
 
-  def call(self, conditioning):
+  def call(self, inputs):
     """Updates conditioning with dictionary of decoder outputs."""
-    conditioning = core.copy_if_tf_function(conditioning)
-
-    for d in self.decoder_list:
-      x = d.decode(conditioning)
-      outputs = nn.split_to_dict(x, d.output_splits)
-
-      if isinstance(outputs, dict):
-        conditioning.update(outputs)
+    conditioning = ddsp.core.copy_if_tf_function(inputs)
+    for dec in self.decoder_list:
+      x = dec(conditioning)
+      if isinstance(x, dict):
+        conditioning.update(x)
       else:
-        raise ValueError('Decoder must output a dictionary of signals.')
+        raise ValueError('Encoder must output a dictionary of signals.')
     return conditioning

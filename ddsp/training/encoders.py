@@ -36,14 +36,19 @@ class ZEncoder(nn.DictLayer):
     """Constructor."""
     input_keys = input_keys or self.get_argument_names('compute_z')
     # TODO(jesseengel): remove dependence on arbitrary key.
-    input_keys.append('f0_scaled')  # Input to get n_timesteps dynamically.
+    # input_keys.append('f0_scaled')  # Input to get n_timesteps dynamically.
     super().__init__(input_keys, output_keys=['z'], **kwargs)
     self.other_encoders = other_encoders
 
   def call(self, *args, **unused_kwargs):
     """Takes in input tensors and returns a latent tensor z."""
-    time_steps = int(args[-1].shape[1])
-    inputs = args[:-1]  # Last input just used for time_steps.
+    if 'f0_scaled' in unused_kwargs:
+      time_steps = int(unused_kwargs['f0_scaled'].shape[1])
+    elif hasattr(self, 'z_time_steps'):
+      time_steps = self.z_time_steps
+
+    # inputs = args[:-1]  # Last input just used for time_steps.
+    inputs = args
     z = self.compute_z(*inputs)
     z = self.expand_z(z, time_steps)
     if self.other_encoders:
@@ -183,16 +188,22 @@ class EmbeddingContextEncoder(ContextEncoder):
     conditioning[self.output_key] = self.compute_context(conditioning)
     return conditioning
 
-class MultiEncoder(Encoder):
+class MultiEncoder(tfkl.Layer):
   """Runs a list of encoders in order."""
 
-  def __init__(self, encoder_list, name='multi_encoder'):
-    super().__init__(name=name)
+  def __init__(self, encoder_list, **kwargs):
+    super().__init__(**kwargs)
     self.encoder_list = encoder_list
 
-  def call(self, conditioning):
+  def call(self, inputs):
+    """Updates conditioning with dictionary of encoder outputs."""
+    conditioning = ddsp.core.copy_if_tf_function(inputs)
     for enc in self.encoder_list:
-      conditioning = enc(conditioning)
+      x = enc(conditioning)
+      if isinstance(x, dict):
+        conditioning.update(x)
+      else:
+        raise ValueError('Encoder must output a dictionary of signals.')
     return conditioning
 
 # Transcribing Autoencoder Encoders --------------------------------------------
@@ -320,7 +331,7 @@ class SinusoidalToHarmonicEncoder(nn.DictLayer):
     return (harm_amp, harm_dist, f0_hz)
 
 @gin.register
-class VideoEncoder(Encoder):
+class VideoEncoder(ZEncoder):
   """Generate latent variables with deep features from a video network."""
 
   def __init__(self,
@@ -328,10 +339,9 @@ class VideoEncoder(Encoder):
                rnn_type='gru',
                z_dims=32,
                z_time_steps=250,
-               f0_encoder=None,
                other_encoders=None,
-               name='mfcc_time_distrbuted_rnn_encoder'):
-    super().__init__(f0_encoder=f0_encoder, other_encoders=other_encoders, name=name)
+               **kwargs):
+    super().__init__(other_encoders=other_encoders, **kwargs)
     self.z_time_steps = z_time_steps
 
     # Layers.
@@ -350,8 +360,8 @@ class VideoEncoder(Encoder):
                           tf.keras.layers.GlobalAveragePooling2D(),
                         ])
 
-  def compute_z(self, conditioning):
-    batch_flat = tf.reshape(conditioning['frames'], (-1,) + self.frame_shape)
+  def compute_z(self, frames):
+    batch_flat = tf.reshape(frames, (-1,) + self.frame_shape)
     image_features = self.cv_net(batch_flat)
     condensed = self.final_layers(image_features)
     # rebatched = tf.reshape(condensed, tf.stack([tf.shape(conditioning['frames'])[0], tf.shape(conditioning['frames'])[1], tf.shape(condensed)[-1]], axis=0))

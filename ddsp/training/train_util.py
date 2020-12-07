@@ -262,9 +262,9 @@ def train(data_provider,
           metric.reset_states()
 
       if step % validation_steps == 0 and validation_provider:
-        validation_batch = next(validation_set_iter)
         losses_list = []
-        for i in range(5):
+        for i in range(3):
+          validation_batch = next(validation_set_iter)
           _, val_losses = trainer.model(validation_batch, return_losses=True, training=True)
           losses_list.append(val_losses)
         val_losses = { ('valid_' + k) : sum(x[k] for x in losses_list)/len(losses_list) for k in losses_list[0] }
