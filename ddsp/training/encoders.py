@@ -37,8 +37,11 @@ class ZEncoder(nn.DictLayer):
     input_keys = input_keys or self.get_argument_names('compute_z')
     # TODO(jesseengel): remove dependence on arbitrary key.
     # input_keys.append('f0_scaled')  # Input to get n_timesteps dynamically.
-    super().__init__(input_keys, output_keys=['z'], **kwargs)
     self.other_encoders = other_encoders
+    if other_encoders:
+      for enc in self.other_encoders:
+        input_keys.append(enc.input_key)
+    super().__init__(input_keys, output_keys=['z'], **kwargs)
 
   def call(self, *args, **unused_kwargs):
     """Takes in input tensors and returns a latent tensor z."""
@@ -48,12 +51,15 @@ class ZEncoder(nn.DictLayer):
       time_steps = self.z_time_steps
 
     # inputs = args[:-1]  # Last input just used for time_steps.
-    inputs = args
+    if self.other_encoders:
+      inputs = args[:-len(self.other_encoders)]
+    else:
+      inputs = args
     z = self.compute_z(*inputs)
     z = self.expand_z(z, time_steps)
     if self.other_encoders:
-      for enc in self.other_encoders:
-        z = self.concat_encoding(enc(conditioning)[enc.output_key], z)
+      for i, enc in enumerate(reversed(self.other_encoders)):
+        z = self.concat_encoding(enc.compute_encoding(args[-(i+1)]), z)
     return z
 
   def concat_encoding (self, enc, z):
@@ -156,7 +162,7 @@ class ContextEncoder(tfkl.Layer):
   def call(self, conditioning):
     return self.compute_context(conditioning)
 
-  def compute_context(self, conditioning):
+  def compute_encoding(self, inputs):
     """Takes in conditioning dictionary, returns context."""
     raise NotImplementedError
 
@@ -167,25 +173,25 @@ class EmbeddingContextEncoder(ContextEncoder):
   def __init__(self,
                vocab_size,
                vector_length,
-               conditioning_key,
+               input_key,
                output_key,
                name='embedding_context_encoder'):
     super().__init__(name=name)
     self.vocab_size = vocab_size
     self.vector_length = vector_length
-    self.conditioning_key = conditioning_key
+    self.input_key = input_key
     self.output_key = output_key
 
     # Layers.
     self.embedding = nn.embedding(self.vocab_size, self.vector_length)
 
-  def compute_context(self, conditioning):
+  def compute_encoding(self, inputs):
     """Compute context from embedding."""
-    return self.embedding(tf.cast(conditioning[self.conditioning_key], dtype=tf.int32))
+    return self.embedding(tf.cast(inputs, dtype=tf.int32))
 
   def call(self, conditioning):
     """Updates conditioning with embedding."""
-    conditioning[self.output_key] = self.compute_context(conditioning)
+    conditioning[self.output_key] = self.compute_encoding(conditioning[self.input_key])
     return conditioning
 
 class MultiEncoder(tfkl.Layer):

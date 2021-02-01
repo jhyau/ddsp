@@ -66,7 +66,7 @@ def mean_difference(target, value, loss_type='L1', weights=None):
   elif loss_type == 'L2':
     return tf.reduce_mean(difference**2 * weights)
   elif loss_type == 'COSINE':
-    return tf.losses.cosine_distance(target, value, weights=weights, axis=-1)
+    return tf.compat.v1.losses.cosine_distance(tf.linalg.normalize(target)[0], tf.linalg.normalize(value)[0], weights=weights, axis=-1)
   else:
     raise ValueError('Loss type ({}), must be '
                      '"L1", "L2", or "COSINE"'.format(loss_type))
@@ -90,6 +90,8 @@ class SpectralLoss(Loss):
                delta_time_weight=0.0,
                delta_freq_weight=0.0,
                cumsum_freq_weight=0.0,
+               bin_time_weight=0.0,
+               max_power_weight=0.0,
                logmag_weight=0.0,
                logmel_weight=0.0,
                loudness_weight=0.0,
@@ -130,6 +132,8 @@ class SpectralLoss(Loss):
     self.delta_time_weight = delta_time_weight
     self.delta_freq_weight = delta_freq_weight
     self.cumsum_freq_weight = cumsum_freq_weight
+    self.bin_time_weight = bin_time_weight
+    self.max_power_weight = max_power_weight
     self.logmag_weight = logmag_weight
     self.logmel_weight = logmel_weight
     self.loudness_weight = loudness_weight
@@ -174,6 +178,18 @@ class SpectralLoss(Loss):
         loss += self.cumsum_freq_weight * mean_difference(
             target, value, self.loss_type, weights=weights)
 
+      if self.bin_time_weight > 0:
+        target = tf.reduce_sum(target_mag, axis=-1)
+        value = tf.reduce_sum(value_mag, axis=-1)
+        loss += self.bin_time_weight * mean_difference(
+            target, value, self.loss_type, weights=weights)
+
+      if self.max_power_weight > 0:
+        target = spectral_ops.safe_log(tf.reduce_max(target_mag, axis=2))
+        value = spectral_ops.safe_log(tf.reduce_max(value_mag, axis=2))
+        loss += self.max_power_weight * mean_difference(
+            target, value, self.loss_type, weights=weights)
+
       # Add logmagnitude loss, reusing spectrogram.
       if self.logmag_weight > 0:
         target = spectral_ops.safe_log(target_mag)
@@ -201,7 +217,6 @@ class SpectralLoss(Loss):
           target, value, self.loss_type, weights=weights)
 
     return loss
-
 
 # ------------------------------------------------------------------------------
 # Peceptual Losses

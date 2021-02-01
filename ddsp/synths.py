@@ -321,6 +321,7 @@ class Impact(processors.Processor):
                resample_method='window',
                max_tau=.0005,
                max_impact_frequency=30,
+               initial_bias=-1.5,
                name='impact'):
     super().__init__(name=name)
     self.n_samples = n_samples
@@ -329,6 +330,7 @@ class Impact(processors.Processor):
     self.resample_method = resample_method
     self.max_tau = max_tau
     self.max_impact_frequency=max_impact_frequency
+    self.initial_bias = initial_bias
 
   def get_controls(self, magnitudes, stdevs, taus, tau_multiplier):
     """Convert network output tensors into a dictionary of synthesizer controls.
@@ -349,7 +351,7 @@ class Impact(processors.Processor):
     # Scale the inputs.
     if self.mag_scale_fn is not None:
       noise = tf.abs(stdevs) * tf.random.normal(stdevs.shape, dtype=tf.float32)
-      magnitudes = self.mag_scale_fn(magnitudes + noise)
+      magnitudes = self.mag_scale_fn(magnitudes + noise + self.initial_bias)
       taus = self.max_tau * tf.nn.sigmoid(2.0 * tau_multiplier) * tf.nn.sigmoid(taus) + 1.0/self.sample_rate
 
     return {'magnitudes': magnitudes,
@@ -359,6 +361,12 @@ class Impact(processors.Processor):
   def hertz_gaussian(self, peak_times, tau):
     t = tf.reshape(tf.range(self.n_samples, dtype = tf.float32) / self.sample_rate, (1, -1, 1))
     impulses =  tf.exp(-6/tf.square(tau) * tf.square(t - peak_times - tau / 2))
+    return impulses
+
+  def hertz_sine(self, peak_times, tau):
+    t = tf.reshape(tf.range(self.n_samples, dtype = tf.float32) / self.sample_rate, (1, -1, 1))
+    impulses =  tf.sin(math.pi*(t - peak_times) / tau)
+    impulses = impulses * tf.cast(tf.logical_and(t >= peak_times, t <= (peak_times+tau)), tf.float32)
     return impulses
 
   def get_signal(self, magnitudes, taus):
@@ -376,20 +384,29 @@ class Impact(processors.Processor):
       signal: A tensor of the force impulse profile of shape [batch, n_samples].
     """
     # Create sample-wise envelopes.
+    weight_distance = 100
     diff_order = 1
-    magnitude_diffs = tf.experimental.numpy.diff(magnitudes, n=diff_order, axis=1)
-    magnitude_diffs = tf.concat((tf.zeros((tf.shape(magnitude_diffs)[0], int(math.floor(diff_order/2)), 1), dtype=tf.float32),
-                                magnitude_diffs,
-                                tf.zeros((tf.shape(magnitude_diffs)[0], int(math.ceil(diff_order/2)), 1), dtype=tf.float32)), axis=1)
-    # magnitude_envelopes = core.resample(magnitudes, self.n_samples,
-    magnitude_envelopes = core.resample(((-1)**diff_order) *  magnitude_diffs, self.n_samples,
+    # magnitude_diffs = tf.experimental.numpy.diff(magnitudes, n=diff_order, axis=1)
+    # magnitude_diffs = tf.concat((tf.zeros((tf.shape(magnitude_diffs)[0], int(math.floor(diff_order/2)), 1), dtype=tf.float32),
+    #                             magnitude_diffs,
+    #                             tf.zeros((tf.shape(magnitude_diffs)[0], int(math.ceil(diff_order/2)), 1), dtype=tf.float32)), axis=1)
+    # magnitude_envelopes = core.resample(((-1)**diff_order) *  magnitude_diffs, self.n_samples,
+    magnitude_envelopes = core.resample(magnitudes, self.n_samples,
                                         method=self.resample_method)
     taus = core.resample(taus, self.n_samples,
                           method=self.resample_method)
 
     window_size = int(self.sample_rate / self.max_impact_frequency)
-    vals, inds = tf.nn.max_pool_with_argmax(tf.expand_dims(magnitude_envelopes, axis=1), window_size, window_size, 'SAME')
-    peak_times = tf.squeeze(tf.cast(inds / self.sample_rate, dtype=tf.float32), axis=3)
+    magnitude_envelopes = tf.expand_dims(magnitude_envelopes, axis=1)
+    vals, inds = tf.nn.max_pool_with_argmax(magnitude_envelopes, window_size, window_size, 'SAME')
+    # Use a weighted average of magnitude to select peak time so that things can shift around
+    augmented_inds = tf.concat([inds - weight_distance, inds, inds + weight_distance], axis=-1)
+    b,w,h,c = magnitude_envelopes.get_shape().as_list()
+    mags_pooled = tf.gather(tf.reshape(magnitude_envelopes, shape=[b*w*h*c]), augmented_inds)
+    weighted_inds = tf.reduce_sum(tf.cast(augmented_inds, dtype=tf.float32) * mags_pooled, axis=-1) / tf.reduce_sum(mags_pooled, axis=-1)
+    peak_times = tf.cast(weighted_inds / self.sample_rate, dtype=tf.float32)
+    # peak_times = tf.squeeze(tf.cast(inds / self.sample_rate, dtype=tf.float32), axis=3)
+    
     scale_heights = tf.squeeze(vals, axis=3)
     taus = tf.expand_dims(taus, axis=1)
     b,w,h,c = taus.get_shape().as_list()
@@ -437,16 +454,17 @@ class ModalFIR(processors.Processor):
     """
     # Scale the inputs.
     if self.amp_scale_fn is not None:
-      gains = 0.001 * self.amp_scale_fn(gains + self.initial_bias, exponent=3.0)
+      # gains = 0.001 * self.amp_scale_fn(gains + self.initial_bias, exponent=3.0)
+      gains = tf.nn.softmax(gains)
       # dampings = 10.0 / self.amp_scale_fn(4.0 * dampings + self.initial_bias)
       # dampings = 0.05 * self.freq_scale_fn(dampings, hz_min=0.0, hz_max=100000.0)
-      dampings = 10000 * self.amp_scale_fn(dampings + self.initial_bias, exponent=6.0)
+      dampings = 10000 * self.amp_scale_fn(dampings + self.initial_bias, exponent=4.0)
 
     if self.freq_scale_fn is not None:
       frequencies = self.freq_scale_fn(frequencies, hz_min=10.0, hz_max=self.hz_max)
-      gains = core.remove_above_nyquist(frequencies,
-                                             gains,
-                                             self.sample_rate)
+    gains = core.remove_above_nyquist(frequencies,
+                                            gains,
+                                            self.sample_rate)
     return {'gains': gains,
             'frequencies': frequencies,
             'dampings': dampings}

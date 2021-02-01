@@ -126,6 +126,8 @@ class ExpDecayReverb(Reverb):
                trainable=False,
                reverb_length=48000,
                scale_fn=core.exp_sigmoid,
+               gain_initial_bias=0.0,
+               decay_initial_bias=0.0,
                add_dry=True,
                name='exp_decay_reverb'):
     """Constructor.
@@ -141,11 +143,13 @@ class ExpDecayReverb(Reverb):
     super().__init__(name=name, add_dry=add_dry, trainable=trainable)
     self._reverb_length = reverb_length
     self._scale_fn = scale_fn
+    self._gain_initial_bias = gain_initial_bias
+    self._decay_initial_bias = decay_initial_bias
 
   def _get_ir(self, gain, decay):
     """Simple exponential decay of white noise."""
     gain = self._scale_fn(gain)
-    decay_exponent = 2.0 + tf.exp(decay)
+    decay_exponent = 2.0 + tf.exp(decay + self._decay_initial_bias)
     time = tf.linspace(0.0, 1.0, self._reverb_length)[tf.newaxis, :]
     noise = tf.random.uniform([1, self._reverb_length], minval=-1.0, maxval=1.0)
     ir = gain * tf.exp(-decay_exponent * time) * noise
@@ -198,6 +202,92 @@ class ExpDecayReverb(Reverb):
 
     return {'audio': audio, 'ir': ir}
 
+@gin.register
+class FilteredNoiseExpDecayReverb(Reverb):
+  """Parameterize impulse response with outputs of a filtered noise synth."""
+
+  def __init__(self,
+               trainable=False,
+               reverb_length=48000,
+               window_size=257,
+               n_filter_banks=16,
+               scale_fn=core.exp_sigmoid,
+               gain_initial_bias=-3.0,
+               decay_initial_bias=0.0,
+               add_dry=True,
+               name='filtered_noise_exp_decay_reverb'):
+    """Constructor.
+
+    Args:
+      trainable: Learn the impulse_response as a single variable for the entire
+        dataset.
+      reverb_length: Length of the impulse response.
+      window_size: Window size for filtered noise synthesizer.
+      n_frames: Time resolution of magnitudes coefficients. Only used if
+        trainable=True.
+      n_filter_banks: Frequency resolution of magnitudes coefficients. Only used
+        if trainable=True.
+      scale_fn: Function by which to scale the magnitudes.
+      initial_bias: Shift the filtered noise synth inputs by this amount
+        (before scale_fn) to start generating noise in a resonable range when
+        given magnitudes centered around 0.
+      add_dry: Add dry signal to reverberated signal on output.
+      name: Name of processor module.
+    """
+    super().__init__(name=name, add_dry=add_dry, trainable=trainable)
+    self._n_filter_banks = n_filter_banks
+    self._synth = synths.FilteredNoise(n_samples=reverb_length,
+                                       window_size=window_size,
+                                       scale_fn=scale_fn,
+                                       initial_bias=gain_initial_bias)
+    self._decay_initial_bias = decay_initial_bias
+
+  def build(self, unused_input_shape):
+    """Initialize impulse response."""
+    if self.trainable:
+      initializer = tf.random_normal_initializer(mean=0, stddev=1e-2)
+      self._magnitudes = self.add_weight(
+          name='magnitudes',
+          shape=[1, self._n_filter_banks],
+          dtype=tf.float32,
+          initializer=initializer)
+      self._decay = self.add_weight(
+          name='decay',
+          shape=[1],
+          dtype=tf.float32,
+          initializer=tf.constant_initializer(4.0))
+    self.built = True
+
+  def get_controls(self, audio, magnitudes=None, decay=None):
+    """Convert network outputs into ir response.
+
+    Args:
+      audio: Dry audio. 2-D Tensor of shape [batch, n_samples].
+      magnitudes: Magnitudes tensor of shape [batch, n_frames, n_filter_banks].
+        Expects float32 that is strictly positive. Not used if trainable=True.
+
+    Returns:
+      controls: Dictionary of effect controls.
+
+    Raises:
+      ValueError: If trainable=False and magnitudes are not provided.
+    """
+    if self.trainable:
+      magnitudes, decay = self._magnitudes[tf.newaxis, :], self._decay[tf.newaxis, :]
+    else:
+      if magnitudes is None or decay is None:
+        raise ValueError('Must provide "magnitudes" and "decay" tensors if '
+                         'FilteredNoiseReverb trainable=False.')
+
+    ir = self._synth(magnitudes)
+    decay_exponent = 2.0 + tf.exp(decay + self._decay_initial_bias)
+    time = tf.linspace(0.0, 1.0, self._reverb_length)[tf.newaxis, :]
+    ir = ir * tf.exp(-decay_exponent * time)
+
+    if self.trainable:
+      ir = self._match_dimensions(audio, ir)
+
+    return {'audio': audio, 'ir': ir}
 
 @gin.register
 class FilteredNoiseReverb(Reverb):

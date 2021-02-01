@@ -248,3 +248,20 @@ class Convolve(Processor):
   def get_signal(self, impulse_profile: tf.Tensor,
                  impulse_response: tf.Tensor) -> tf.Tensor:
     return core.fft_convolve(impulse_profile, impulse_response)
+
+@gin.register
+class ScalarMultiply(Processor):
+  """Multiply a signal by a scalar."""
+
+  def __init__(self, scale_fn=core.exp_sigmoid, name: Text = 'scalar_multiply'):
+    super().__init__(name=name)
+    self.scale_fn = scale_fn
+
+  def get_controls(self, signal_one: tf.Tensor,
+                   scalar: tf.Tensor) -> TensorDict:
+    """Just pass signal through, resize and scale the scalar."""
+    return {'signal_one': signal_one, 'scalar': self.scale_fn(tf.expand_dims(tf.squeeze(scalar), axis=1))}
+
+  def get_signal(self, signal_one: tf.Tensor,
+                 scalar: tf.Tensor) -> tf.Tensor:
+    return scalar * signal_one
