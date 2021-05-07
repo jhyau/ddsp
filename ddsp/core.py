@@ -448,7 +448,7 @@ def frequencies_critical_bands(freqs,
     # Mel.
     mel_min = hz_to_mel(hz_min)
     mel_max = hz_to_mel(hz_max)
-    linear_mel = np.linspace(mel_min, mel_max, n_sinusoids)
+    linear_mel = tf.linspace(mel_min, mel_max, n_sinusoids)
     f_center = mel_to_hz(linear_mel)
 
   # Bandwiths given by equivalent rectangular bandwidth (ERB).

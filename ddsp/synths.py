@@ -254,6 +254,8 @@ class Sinusoidal(processors.Processor):
                amp_scale_fn=core.exp_sigmoid,
                amp_resample_method='window',
                freq_scale_fn=core.frequencies_sigmoid,
+               freq_scale='bark',
+               hz_max=8000,
                name='sinusoidal'):
     super().__init__(name=name)
     self.n_samples = n_samples
@@ -261,6 +263,8 @@ class Sinusoidal(processors.Processor):
     self.amp_scale_fn = amp_scale_fn
     self.amp_resample_method = amp_resample_method
     self.freq_scale_fn = freq_scale_fn
+    self.freq_scale = freq_scale
+    self.hz_max = hz_max
 
   def get_controls(self, amplitudes, frequencies):
     """Convert network output tensors into a dictionary of synthesizer controls.
@@ -279,7 +283,7 @@ class Sinusoidal(processors.Processor):
       amplitudes = self.amp_scale_fn(amplitudes)
 
     if self.freq_scale_fn is not None:
-      frequencies = self.freq_scale_fn(frequencies)
+      frequencies = self.freq_scale_fn(frequencies, scale=self.freq_scale, hz_max=self.hz_max)
       amplitudes = core.remove_above_nyquist(frequencies,
                                              amplitudes,
                                              self.sample_rate)
@@ -319,9 +323,11 @@ class Impact(processors.Processor):
                sample_rate=16000,
                mag_scale_fn=core.exp_sigmoid,
                resample_method='window',
-               max_tau=.0005,
+               max_tau=0.003,
                max_impact_frequency=30,
                initial_bias=-1.5,
+               timing_adjust=True,
+               include_noise=True,
                name='impact'):
     super().__init__(name=name)
     self.n_samples = n_samples
@@ -331,8 +337,10 @@ class Impact(processors.Processor):
     self.max_tau = max_tau
     self.max_impact_frequency=max_impact_frequency
     self.initial_bias = initial_bias
+    self.timing_adjust = timing_adjust
+    self.include_noise = include_noise
 
-  def get_controls(self, magnitudes, stdevs, taus, tau_multiplier):
+  def get_controls(self, magnitudes, stdevs, taus, tau_bias):
     """Convert network output tensors into a dictionary of synthesizer controls.
 
     Args:
@@ -342,7 +350,7 @@ class Impact(processors.Processor):
         [batch, time, 1].
       taus: 3-D Tensor of synthesizer controls, of shape
         [batch, time, 1].
-      tau_multiplier: 3-D Tensor of synthesizer controls, of shape
+      tau_bias: 3-D Tensor of synthesizer controls, of shape
         [batch, 1, 1].
 
     Returns:
@@ -350,9 +358,14 @@ class Impact(processors.Processor):
     """
     # Scale the inputs.
     if self.mag_scale_fn is not None:
-      noise = tf.abs(stdevs) * tf.random.normal(stdevs.shape, dtype=tf.float32)
-      magnitudes = self.mag_scale_fn(magnitudes + noise + self.initial_bias)
-      taus = self.max_tau * tf.nn.sigmoid(2.0 * tau_multiplier) * tf.nn.sigmoid(taus) + 1.0/self.sample_rate
+      if self.include_noise:
+        noise = tf.abs(stdevs) * tf.random.normal(stdevs.shape, dtype=tf.float32)
+        magnitudes = self.mag_scale_fn(magnitudes + noise + self.initial_bias)
+      else:
+        magnitudes = self.mag_scale_fn(magnitudes + self.initial_bias)
+      # taus = self.max_tau * tf.nn.sigmoid(2.0 * tau_bias) * tf.nn.sigmoid(taus) + 1.0/self.sample_rate
+      # noise = tau_bias + tau_bias * tf.random.normal(taus.shape, dtype=tf.float32)
+      taus = core.exp_sigmoid(tau_bias + taus, exponent=4.0, max_value=self.max_tau, threshold=3.0/self.sample_rate)
 
     return {'magnitudes': magnitudes,
             'taus': taus}
@@ -360,7 +373,8 @@ class Impact(processors.Processor):
 
   def hertz_gaussian(self, peak_times, tau):
     t = tf.reshape(tf.range(self.n_samples, dtype = tf.float32) / self.sample_rate, (1, -1, 1))
-    impulses =  tf.exp(-6/tf.square(tau) * tf.square(t - peak_times - tau / 2))
+    # impulses =  tf.exp(-6/tf.square(tau) * tf.square(t - peak_times - tau / 2))
+    impulses =  tf.exp(-6/tf.square(tau) * tf.square(t - peak_times))
     return impulses
 
   def hertz_sine(self, peak_times, tau):
@@ -400,12 +414,14 @@ class Impact(processors.Processor):
     magnitude_envelopes = tf.expand_dims(magnitude_envelopes, axis=1)
     vals, inds = tf.nn.max_pool_with_argmax(magnitude_envelopes, window_size, window_size, 'SAME')
     # Use a weighted average of magnitude to select peak time so that things can shift around
-    augmented_inds = tf.concat([inds - weight_distance, inds, inds + weight_distance], axis=-1)
-    b,w,h,c = magnitude_envelopes.get_shape().as_list()
-    mags_pooled = tf.gather(tf.reshape(magnitude_envelopes, shape=[b*w*h*c]), augmented_inds)
-    weighted_inds = tf.reduce_sum(tf.cast(augmented_inds, dtype=tf.float32) * mags_pooled, axis=-1) / tf.reduce_sum(mags_pooled, axis=-1)
-    peak_times = tf.cast(weighted_inds / self.sample_rate, dtype=tf.float32)
-    # peak_times = tf.squeeze(tf.cast(inds / self.sample_rate, dtype=tf.float32), axis=3)
+    if self.timing_adjust:
+      augmented_inds = tf.concat([inds - weight_distance, inds, inds + weight_distance], axis=-1)
+      b,w,h,c = magnitude_envelopes.get_shape().as_list()
+      mags_pooled = tf.gather(tf.reshape(magnitude_envelopes, shape=[b*w*h*c]), augmented_inds)
+      weighted_inds = tf.reduce_sum(tf.cast(augmented_inds, dtype=tf.float32) * mags_pooled, axis=-1) / tf.reduce_sum(mags_pooled, axis=-1)
+      peak_times = tf.cast(weighted_inds / self.sample_rate, dtype=tf.float32)
+    else:
+      peak_times = tf.squeeze(tf.cast(inds / self.sample_rate, dtype=tf.float32), axis=3)
     
     scale_heights = tf.squeeze(vals, axis=3)
     taus = tf.expand_dims(taus, axis=1)
@@ -425,8 +441,9 @@ class ModalFIR(processors.Processor):
                sample_rate=16000,
                amp_scale_fn=core.exp_sigmoid,
                amp_resample_method='window',
-               freq_scale_fn=core.frequencies_sigmoid,
+               freq_scale_fn=core.frequencies_critical_bands,
                hz_max=8000.0,
+               freq_scale='bark',
                initial_bias=-1.5,
                name='modal_fir'):
     super().__init__(name=name)
@@ -436,6 +453,7 @@ class ModalFIR(processors.Processor):
     self.amp_resample_method = amp_resample_method
     self.freq_scale_fn = freq_scale_fn
     self.hz_max = hz_max
+    self.freq_scale = freq_scale
     self.initial_bias = initial_bias
 
   def get_controls(self, gains, frequencies, dampings):
@@ -461,7 +479,9 @@ class ModalFIR(processors.Processor):
       dampings = 10000 * self.amp_scale_fn(dampings + self.initial_bias, exponent=4.0)
 
     if self.freq_scale_fn is not None:
-      frequencies = self.freq_scale_fn(frequencies, hz_min=10.0, hz_max=self.hz_max)
+      if len(frequencies.shape) == 2:
+        frequencies = tf.expand_dims(frequencies, axis=1)
+      frequencies = self.freq_scale_fn(frequencies, hz_min=10.0, hz_max=self.hz_max, scale=self.freq_scale)
     gains = core.remove_above_nyquist(frequencies,
                                             gains,
                                             self.sample_rate)

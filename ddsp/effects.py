@@ -234,7 +234,7 @@ class FilteredNoiseExpDecayReverb(Reverb):
       add_dry: Add dry signal to reverberated signal on output.
       name: Name of processor module.
     """
-    super().__init__(name=name, add_dry=add_dry, trainable=trainable)
+    super().__init__(name=name, add_dry=add_dry, trainable=trainable, reverb_length=reverb_length)
     self._n_filter_banks = n_filter_banks
     self._synth = synths.FilteredNoise(n_samples=reverb_length,
                                        window_size=window_size,

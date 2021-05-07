@@ -45,6 +45,7 @@ class ZEncoder(nn.DictLayer):
 
   def call(self, *args, **unused_kwargs):
     """Takes in input tensors and returns a latent tensor z."""
+    time_steps = None
     if 'f0_scaled' in unused_kwargs:
       time_steps = int(unused_kwargs['f0_scaled'].shape[1])
     elif hasattr(self, 'z_time_steps'):
@@ -56,7 +57,8 @@ class ZEncoder(nn.DictLayer):
     else:
       inputs = args
     z = self.compute_z(*inputs)
-    z = self.expand_z(z, time_steps)
+    if time_steps:
+      z = self.expand_z(z, time_steps)
     if self.other_encoders:
       for i, enc in enumerate(reversed(self.other_encoders)):
         z = self.concat_encoding(enc.compute_encoding(args[-(i+1)]), z)
@@ -94,6 +96,7 @@ class MfccTimeDistributedRnnEncoder(ZEncoder):
                z_time_steps=250,
                sample_rate=16000,
                other_encoders=None,
+               tcnn_kernel=7,
                **kwargs):
     super().__init__(other_encoders=other_encoders, **kwargs)
     if mfcc_time_steps not in [63, 125, 250, 500, 1000]:
@@ -131,7 +134,7 @@ class MfccTimeDistributedRnnEncoder(ZEncoder):
     # Layers.
     self.z_norm = nn.Normalize('instance')
     self.rnn = nn.Rnn(rnn_channels, rnn_type)
-    self.tcnn = nn.temporal_cnn(rnn_channels, 7, causal=False)
+    self.tcnn = nn.temporal_cnn(rnn_channels, tcnn_kernel, causal=False)
     self.dense_out = tfkl.Dense(z_dims)
 
   def compute_z(self, audio):
@@ -194,6 +197,7 @@ class EmbeddingContextEncoder(ContextEncoder):
     conditioning[self.output_key] = self.compute_encoding(conditioning[self.input_key])
     return conditioning
 
+@gin.register
 class MultiEncoder(tfkl.Layer):
   """Runs a list of encoders in order."""
 

@@ -260,7 +260,7 @@ class ScalarMultiply(Processor):
   def get_controls(self, signal_one: tf.Tensor,
                    scalar: tf.Tensor) -> TensorDict:
     """Just pass signal through, resize and scale the scalar."""
-    return {'signal_one': signal_one, 'scalar': self.scale_fn(tf.expand_dims(tf.squeeze(scalar), axis=1))}
+    return {'signal_one': signal_one, 'scalar': self.scale_fn(tf.expand_dims(tf.squeeze(scalar), axis=-1))}
 
   def get_signal(self, signal_one: tf.Tensor,
                  scalar: tf.Tensor) -> tf.Tensor:

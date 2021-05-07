@@ -373,15 +373,15 @@ class AudioProvider(DataProvider):
 
   def __init__(self,
                file_pattern=None,
-               example_secs=4,
+               n_samples=64000,
                audio_sample_rate=16000,
                frame_rate=250,
                append_material_id=False):
     self.random_generator = tf.random.Generator.from_seed(1)
 
     self._file_pattern = file_pattern or self.default_file_pattern
-    self._audio_length = int(example_secs * audio_sample_rate)
-    self._feature_length = int(example_secs * frame_rate)
+    self._audio_length = n_samples
+    self._feature_length = int(n_samples / audio_sample_rate * frame_rate)
     super().__init__(audio_sample_rate, frame_rate)
     self.append_material_id = append_material_id
     if self.append_material_id:
@@ -455,12 +455,14 @@ class VideoProvider(AudioProvider):
                file_pattern=None,
                example_secs=4,
                audio_sample_rate=16000,
+               append_material_id=False,
                video_frame_rate=30,
                frame_rate=250):
     super().__init__( file_pattern=file_pattern,
-                  example_secs=example_secs,
+                  n_samples=example_secs * audio_sample_rate,
                   audio_sample_rate=audio_sample_rate,
-                  frame_rate=frame_rate)
+                  frame_rate=frame_rate,
+                  append_material_id=append_material_id)
     self._video_length = int(example_secs * video_frame_rate)
     self._video_padding_frames = 1
 

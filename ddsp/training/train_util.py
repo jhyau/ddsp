@@ -28,6 +28,7 @@ import tensorflow.compat.v2 as tf
 import wandb
 
 # ---------------------- Helper Functions --------------------------------------
+@gin.configurable
 def get_strategy(tpu='', cluster_config=''):
   """Create a distribution strategy for running on accelerators.
 

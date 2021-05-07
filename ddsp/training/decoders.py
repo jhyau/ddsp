@@ -35,6 +35,7 @@ class RnnFcDecoder(nn.OutputSplitsLayer):
                layers_per_stack=3,
                input_keys=('ld_scaled', 'f0_scaled', 'z'),
                output_splits=(('amps', 1), ('harmonic_distribution', 40)),
+               upsampling=None,
                **kwargs):
     super().__init__(
         input_keys=input_keys, output_splits=output_splits, **kwargs)
@@ -44,6 +45,10 @@ class RnnFcDecoder(nn.OutputSplitsLayer):
     self.input_stacks = [stack() for k in self.input_keys]
     self.rnn = nn.Rnn(rnn_channels, rnn_type)
     self.out_stack = stack()
+    if upsampling:
+      self.upsample = tfkl.UpSampling1D(upsampling)
+    else:
+      self.upsample = None
 
   def compute_output(self, *inputs):
     # Initial processing.
@@ -51,6 +56,8 @@ class RnnFcDecoder(nn.OutputSplitsLayer):
 
     # Run an RNN over the latents.
     x = tf.concat(inputs, axis=-1)
+    if self.upsample:
+      x = self.upsample(x)
     x = self.rnn(x)
     x = tf.concat(inputs + [x], axis=-1)
 

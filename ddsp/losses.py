@@ -173,16 +173,24 @@ class SpectralLoss(Loss):
 
       # TODO(kyriacos) normalize cumulative spectrogram
       if self.cumsum_freq_weight > 0:
-        target = cumsum(target_mag, axis=2)
-        value = cumsum(value_mag, axis=2)
+        target = cumsum(target_mag, axis=-1)
+        value = cumsum(value_mag, axis=-1)
         loss += self.cumsum_freq_weight * mean_difference(
             target, value, self.loss_type, weights=weights)
 
       if self.bin_time_weight > 0:
         target = tf.reduce_sum(target_mag, axis=-1)
         value = tf.reduce_sum(value_mag, axis=-1)
+        target = tf.cumsum(target, axis=-1)
+        value = tf.cumsum(value, axis=-1)
         loss += self.bin_time_weight * mean_difference(
             target, value, self.loss_type, weights=weights)
+        # times = tf.cast(tf.linspace(0, 1, tf.shape(target)[-1]), dtype=tf.float32)
+        # target = target / tf.reduce_sum(target, axis=-1)
+        # value = value / tf.reduce_sum(value, axis=-1)
+        # target = tf.cast(tf.expand_dims(target, axis=1), dtype=tf.float32)
+        # value = tf.cast(tf.expand_dims(value, axis=1), dtype=tf.float32)
+        # loss += self.bin_time_weight * tf.reduce_mean(wasserstein_distance(times, times, target, value))
 
       if self.max_power_weight > 0:
         target = spectral_ops.safe_log(tf.reduce_max(target_mag, axis=2))
