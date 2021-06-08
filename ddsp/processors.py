@@ -265,3 +265,22 @@ class ScalarMultiply(Processor):
   def get_signal(self, signal_one: tf.Tensor,
                  scalar: tf.Tensor) -> tf.Tensor:
     return scalar * signal_one
+
+@gin.register
+class Resample(Processor):
+  """Resample a signal."""
+
+  def __init__( self,
+                n_timesteps: int,
+                method: Text = 'linear',
+                name: Text = 'resample'):
+    super().__init__(name=name)
+    self.n_timesteps = n_timesteps
+    self.method = method
+
+  def get_controls(self, signal_in: tf.Tensor) -> TensorDict:
+    """Just pass signal through."""
+    return {'signal_in': signal_in}
+
+  def get_signal(self, signal_in: tf.Tensor) -> tf.Tensor:
+    return core.resample(signal_in, self.n_timesteps, self.method)

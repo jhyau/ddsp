@@ -181,8 +181,8 @@ class SpectralLoss(Loss):
       if self.bin_time_weight > 0:
         target = tf.reduce_sum(target_mag, axis=-1)
         value = tf.reduce_sum(value_mag, axis=-1)
-        target = tf.cumsum(target, axis=-1)
-        value = tf.cumsum(value, axis=-1)
+        # target = tf.cumsum(target, axis=-1)
+        # value = tf.cumsum(value, axis=-1)
         loss += self.bin_time_weight * mean_difference(
             target, value, self.loss_type, weights=weights)
         # times = tf.cast(tf.linspace(0, 1, tf.shape(target)[-1]), dtype=tf.float32)
