@@ -279,10 +279,12 @@ class FilteredNoiseExpDecayReverb(Reverb):
         raise ValueError('Must provide "magnitudes" and "decay" tensors if '
                          'FilteredNoiseReverb trainable=False.')
 
-    ir = self._synth(magnitudes)
-    decay_exponent = 2.0 + tf.exp(decay + self._decay_initial_bias)
-    time = tf.linspace(0.0, 1.0, self._reverb_length)[tf.newaxis, :]
-    ir = ir * tf.exp(-decay_exponent * time)
+    temp_magnitudes = tf.expand_dims(magnitudes, axis=1)
+    temp_decay = tf.expand_dims(decay, axis=1)
+    decay_exponent = 2.0 + tf.exp(temp_decay + 4.0)
+    time = tf.linspace(0.0, 1.0, self._synth.n_samples//50)[tf.newaxis, :, tf.newaxis]
+    decayed_magnitudes = temp_magnitudes * tf.exp(-decay_exponent * time)
+    ir = self._synth(decayed_magnitudes)
 
     if self.trainable:
       ir = self._match_dimensions(audio, ir)
