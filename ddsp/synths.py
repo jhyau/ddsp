@@ -363,8 +363,6 @@ class Impact(processors.Processor):
         magnitudes = self.mag_scale_fn(magnitudes + noise + self.initial_bias)
       else:
         magnitudes = self.mag_scale_fn(magnitudes + self.initial_bias)
-      # taus = self.max_tau * tf.nn.sigmoid(2.0 * tau_bias) * tf.nn.sigmoid(taus) + 1.0/self.sample_rate
-      # noise = tau_bias + tau_bias * tf.random.normal(taus.shape, dtype=tf.float32)
       taus = core.exp_sigmoid(tau_bias + taus, exponent=4.0, max_value=self.max_tau, threshold=3.0/self.sample_rate)
 
     return {'magnitudes': magnitudes,
@@ -373,8 +371,8 @@ class Impact(processors.Processor):
 
   def hertz_gaussian(self, peak_times, tau):
     t = tf.reshape(tf.range(self.n_samples, dtype = tf.float32) / self.sample_rate, (1, -1, 1))
-    # impulses =  tf.exp(-6/tf.square(tau) * tf.square(t - peak_times - tau / 2))
-    impulses =  tf.exp(-6/tf.square(tau) * tf.square(t - peak_times))
+    impulses =  tf.exp(-6/tf.square(tau) * tf.square(t - peak_times - tau / 2))
+    # impulses =  tf.exp(-6/tf.square(tau) * tf.square(t - peak_times))
     return impulses
 
   def hertz_sine(self, peak_times, tau):
@@ -416,6 +414,7 @@ class Impact(processors.Processor):
     # Use a weighted average of magnitude to select peak time so that things can shift around
     if self.timing_adjust:
       augmented_inds = tf.concat([inds - weight_distance, inds, inds + weight_distance], axis=-1)
+      augmented_inds = tf.clip_by_value(augmented_inds, 0, self.n_samples - 1)
       b,w,h,c = magnitude_envelopes.get_shape().as_list()
       mags_pooled = tf.gather(tf.reshape(magnitude_envelopes, shape=[b*w*h*c]), augmented_inds)
       weighted_inds = tf.reduce_sum(tf.cast(augmented_inds, dtype=tf.float32) * mags_pooled, axis=-1) / tf.reduce_sum(mags_pooled, axis=-1)

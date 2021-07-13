@@ -213,7 +213,7 @@ class FilteredNoiseExpDecayReverb(Reverb):
                n_filter_banks=16,
                scale_fn=core.exp_sigmoid,
                gain_initial_bias=-3.0,
-               decay_initial_bias=0.0,
+               decay_initial_bias=4.0,
                add_dry=True,
                name='filtered_noise_exp_decay_reverb'):
     """Constructor.
@@ -280,11 +280,12 @@ class FilteredNoiseExpDecayReverb(Reverb):
                          'FilteredNoiseReverb trainable=False.')
 
     temp_magnitudes = tf.expand_dims(magnitudes, axis=1)
+    temp_magnitudes = self._synth.get_controls(temp_magnitudes)['magnitudes']
     temp_decay = tf.expand_dims(decay, axis=1)
-    decay_exponent = 2.0 + tf.exp(temp_decay + 4.0)
+    decay_exponent = 2.0 + tf.exp(temp_decay + self._decay_initial_bias)
     time = tf.linspace(0.0, 1.0, self._synth.n_samples//50)[tf.newaxis, :, tf.newaxis]
     decayed_magnitudes = temp_magnitudes * tf.exp(-decay_exponent * time)
-    ir = self._synth(decayed_magnitudes)
+    ir = self._synth.get_signal(decayed_magnitudes)
 
     if self.trainable:
       ir = self._match_dimensions(audio, ir)

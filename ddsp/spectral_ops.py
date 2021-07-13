@@ -36,7 +36,7 @@ def stft(audio, frame_size=2048, overlap=0.75, pad_end=True):
 
   # Remove channel dim if present.
   audio = tf_float32(audio)
-  if len(audio.shape) == 3:
+  if len(tf.shape(audio)) == 3:
     audio = tf.squeeze(audio, axis=-1)
 
   s = tf.signal.stft(
