@@ -25,7 +25,7 @@ from ddsp.training import cloud
 import gin
 import tensorflow.compat.v2 as tf
 
-import wandb
+#import wandb
 
 # ---------------------- Helper Functions --------------------------------------
 @gin.configurable
@@ -171,7 +171,7 @@ def train(data_provider,
           restore_dir='/tmp/ddsp',
           early_stop_loss_value=None,
           report_loss_to_hypertune=False,
-          wandb_logging=False,
+          #wandb_logging=False,
           validation_provider=None,
           validation_steps=10):
   """Main training loop.
@@ -247,8 +247,8 @@ def train(data_provider,
         log_str += '{}: {:.2f}\t'.format(k, v)
       logging.info(log_str)
 
-      if wandb_logging:
-        wandb.log(losses, step=step.numpy())
+      #if wandb_logging:
+      #  wandb.log(losses, step=step.numpy())
 
       # Write Summaries.
       if step % steps_per_summary == 0 and save_dir:
@@ -269,7 +269,7 @@ def train(data_provider,
           _, val_losses = trainer.model(validation_batch, return_losses=True, training=True)
           losses_list.append(val_losses)
         val_losses = { ('valid_' + k) : sum(x[k] for x in losses_list)/len(losses_list) for k in losses_list[0] }
-        wandb.log(val_losses, step=step.numpy())
+        #wandb.log(val_losses, step=step.numpy())
         log_str = 'step: {}\t'.format(int(step.numpy()))
         for k, v in val_losses.items():
           log_str += '{}: {:.2f}\t'.format(k, v)
