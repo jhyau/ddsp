@@ -68,6 +68,23 @@ def compute_audio_features(audio,
   return audio_feats
 
 
+def compute_audio_features_mel_spec(mel_spec,
+                                    n_fft=2048,
+                                    sample_rate=44100,
+                                    frame_rate=225):
+    """Compute features from mel spectrogram"""
+    audio_feats = {'mel_spec': mel_spec}
+    audio = squeeze(mel_spec)
+
+    # Get loudness of the mel spectrogram
+    audio_feats['loudness_db'] = ddsp.spectral_ops.compute_loudness_mel_spec(
+            mel_spec, sample_rate, frame_rate, n_fft)
+
+    # Get F0 frequency
+
+    return audio_feats
+
+
 def f0_dist_conf_thresh(f0_hz,
                         f0_hz_gen,
                         f0_confidence,

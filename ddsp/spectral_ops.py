@@ -133,6 +133,12 @@ def compute_logmel(audio,
 
 
 @gin.register
+def compute_logmel_spec(mel_spec,
+                        sample_rate=44100):
+    return safe_log(mel_spec)
+
+
+@gin.register
 def compute_mfcc(audio,
                  sample_rate=16000,
                  lo_hz=20.0,
@@ -250,6 +256,7 @@ def compute_loudness(audio,
   overlap = 1 - hop_size / n_fft
   stft_fn = stft if use_tf else stft_np
   s = stft_fn(audio, frame_size=n_fft, overlap=overlap, pad_end=True)
+  print("Computing loudness after stft shape: ", s.shape)
 
   # Compute power.
   amplitude = lib.abs(s)
@@ -273,6 +280,87 @@ def compute_loudness(audio,
 
   # Compute expected length of loudness vector
   n_secs = audio.shape[-1] / float(
+      sample_rate)  # `n_secs` can have milliseconds
+  expected_len = int(n_secs * frame_rate)
+
+  # Pad with `-range_db` noise floor or trim vector
+  loudness = pad_or_trim_to_expected_length(
+      loudness, expected_len, -range_db, use_tf=use_tf)
+  return loudness
+
+
+@gin.register
+def compute_loudness_mel_spec(mel_spec,
+                     sample_rate=44100,
+                     frame_rate=225,
+                     n_fft=2048,
+                     range_db=LD_RANGE,
+                     ref_db=20.7,
+                     use_tf=False):
+  """Perceptual loudness in dB, relative to white noise, amplitude=1.
+
+  Function is differentiable if use_tf=True.
+  Args:
+    mel_spec: Mel spectrogram of the audio
+    sample_rate: Audio sample rate in Hz.
+    frame_rate: Rate of loudness frames in Hz.
+    n_fft: Fft window size.
+    range_db: Sets the dynamic range of loudness in decibles. The minimum
+      loudness (per a frequency bin) corresponds to -range_db.
+    ref_db: Sets the reference maximum perceptual loudness as given by
+      (A_weighting + 10 * log10(abs(stft(audio))**2.0). The default value
+      corresponds to white noise with amplitude=1.0 and n_fft=2048. There is a
+      slight dependence on fft_size due to different granularity of perceptual
+      weighting.
+    use_tf: Make function differentiable by using tensorflow.
+
+  Returns:
+    Loudness in decibels. Shape [batch_size, n_frames] or [n_frames,].
+  """
+  if sample_rate % frame_rate != 0:
+    raise ValueError(
+        'frame_rate: {} must evenly divide sample_rate: {}.'
+        'For default frame_rate: 250Hz, suggested sample_rate: 16kHz or 48kHz'
+        .format(frame_rate, sample_rate))
+
+  # Pick tensorflow or numpy.
+  lib = tf if use_tf else np
+
+  # Make inputs tensors for tensorflow.
+  mel_spec = tf_float32(mel_spec) if use_tf else mel_spec
+
+  # Temporarily a batch dimension for single examples.
+  #is_1d = (len(mel_spec.shape) == 1)
+  #mel_spec = mel_spec[lib.newaxis, :] if is_1d else mel_spec
+
+  # Take STFT.
+  #hop_size = sample_rate // frame_rate
+  #overlap = 1 - hop_size / n_fft
+  #stft_fn = stft if use_tf else stft_np
+  #s = stft_fn(audio, frame_size=n_fft, overlap=overlap, pad_end=True)
+
+  # Compute power.
+  amplitude = lib.abs(mel_spec)
+  power_db = amplitude_to_db(amplitude, use_tf=use_tf)
+
+  # Perceptual weighting.
+  frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=n_fft)
+  a_weighting = librosa.A_weighting(frequencies)[lib.newaxis, lib.newaxis, :]
+  loudness = power_db + a_weighting
+
+  # Set dynamic range.
+  loudness -= ref_db
+  loudness = lib.maximum(loudness, -range_db)
+  mean = tf.reduce_mean if use_tf else np.mean
+
+  # Average over frequency bins.
+  loudness = mean(loudness, axis=-1)
+
+  # Remove temporary batch dimension.
+  loudness = loudness[0] if is_1d else loudness
+
+  # Compute expected length of loudness vector
+  n_secs = mel_spec.shape[-1] / float(
       sample_rate)  # `n_secs` can have milliseconds
   expected_len = int(n_secs * frame_rate)
 
