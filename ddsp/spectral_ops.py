@@ -77,6 +77,13 @@ def compute_mag(audio, size=2048, overlap=0.75, pad_end=True):
   mag = tf.abs(stft(audio, frame_size=size, overlap=overlap, pad_end=pad_end))
   return tf_float32(mag)
 
+
+@gin.register
+def compute_mag_mel_spec(mel_spec, size=2048, overlap=0.75, pad_end=True):
+  mag = tf.abs(mel_spec)
+  return tf_float32(mag)
+
+
 @gin.register
 def compute_mel(audio,
                 sample_rate=16000,
@@ -117,6 +124,11 @@ def compute_mel_from_mag(mag,
 @gin.register
 def compute_logmag(audio, size=2048, overlap=0.75, pad_end=True):
   return safe_log(compute_mag(audio, size, overlap, pad_end))
+
+
+@gin.register
+def compute_logmag_mel_spec(mel_spec, size=2048, overlap=0.75, pad_end=True):
+  return safe_log(compute_mag_mel_spec(mel_spec, size, overlap, pad_end))
 
 
 @gin.register
@@ -282,6 +294,8 @@ def compute_loudness(audio,
   n_secs = audio.shape[-1] / float(
       sample_rate)  # `n_secs` can have milliseconds
   expected_len = int(n_secs * frame_rate)
+  print("expected length: ", expected_len)
+  print("shape of loudness before pad/trim: ", loudness.shape)
 
   # Pad with `-range_db` noise floor or trim vector
   loudness = pad_or_trim_to_expected_length(
@@ -327,11 +341,13 @@ def compute_loudness_mel_spec(mel_spec,
   lib = tf if use_tf else np
 
   # Make inputs tensors for tensorflow.
+  # if audio sampling rate=44100, dims will be (80, 1720)
+  # if audio sampling rate=22050, dims will be (80, 860)
   mel_spec = tf_float32(mel_spec) if use_tf else mel_spec
 
   # Temporarily a batch dimension for single examples.
-  #is_1d = (len(mel_spec.shape) == 1)
-  #mel_spec = mel_spec[lib.newaxis, :] if is_1d else mel_spec
+  is_1d = (len(mel_spec.shape) == 1)
+  mel_spec = mel_spec[lib.newaxis, :] if is_1d else mel_spec
 
   # Take STFT.
   #hop_size = sample_rate // frame_rate
@@ -344,8 +360,17 @@ def compute_loudness_mel_spec(mel_spec,
   power_db = amplitude_to_db(amplitude, use_tf=use_tf)
 
   # Perceptual weighting.
-  frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=n_fft)
+  if sample_rate == 44100:
+      nfft_match = 3438
+  elif sample_rate == 22050:
+      nfft_match = 1718
+  else:
+      nfft_match = n_fft
+  frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=nfft_match)
   a_weighting = librosa.A_weighting(frequencies)[lib.newaxis, lib.newaxis, :]
+  # For broadcasting to match 2D mel spec, weights also need to be 2D, not 3D
+  #a_weighting = librosa.A_weighting(frequencies)[lib.newaxis, :]
+  print(f"shape of power_db: {power_db.shape} and shape of weights: {a_weighting.shape}")
   loudness = power_db + a_weighting
 
   # Set dynamic range.
@@ -362,7 +387,9 @@ def compute_loudness_mel_spec(mel_spec,
   # Compute expected length of loudness vector
   n_secs = mel_spec.shape[-1] / float(
       sample_rate)  # `n_secs` can have milliseconds
-  expected_len = int(n_secs * frame_rate)
+  expected_len = int(n_secs * frame_rate) * 10 # To match num_mel_channels=80 for the mel specs
+  print("expected length: ", expected_len)
+  print("shape of loudness before pad/trim: ", loudness.shape)
 
   # Pad with `-range_db` noise floor or trim vector
   loudness = pad_or_trim_to_expected_length(

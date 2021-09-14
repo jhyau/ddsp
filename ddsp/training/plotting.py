@@ -53,6 +53,35 @@ def specplot(audio,
   plt.ylabel('Frequency')
 
 
+def specplot_mel_spec(mel_spec,
+             vmin=-5,
+             vmax=16000,
+             rotate=True,
+             size=512 + 256,
+             **matshow_kwargs):
+  """Plot the log magnitude spectrogram of mel spectrogram."""
+  # If batched, take first element.
+  #if len(mel_spec.shape) == 2:
+  #  mel_spec = mel_spec[0]
+
+  logmag = spectral_ops.compute_logmag_mel_spec(core.tf_float32(mel_spec), size=size)
+  # logmag = spectral_ops.compute_logmel(core.tf_float32(audio), lo_hz=8.0, bins=80, fft_size=size)
+  # logmag = spectral_ops.compute_mfcc(core.tf_float32(audio), mfcc_bins=40, fft_size=size)
+  if rotate:
+    logmag = np.rot90(logmag)
+  # Plotting.
+  plt.matshow(logmag,
+              vmin=vmin,
+              vmax=vmax,
+              cmap=plt.cm.magma,
+              aspect='auto',
+              **matshow_kwargs)
+  plt.xticks([])
+  plt.yticks([])
+  plt.xlabel('Time')
+  plt.ylabel('Frequency')
+
+
 def transfer_function(ir, sample_rate=DEFAULT_SAMPLE_RATE):
   """Get true transfer function from an impulse_response."""
   n_fft = core.get_fft_size(0, ir.shape.as_list()[-1])
