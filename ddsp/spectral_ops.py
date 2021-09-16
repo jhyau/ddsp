@@ -53,6 +53,7 @@ def stft_np(audio, frame_size=2048, overlap=0.75, pad_end=True):
   assert frame_size * overlap % 2.0 == 0.0
   hop_size = int(frame_size * (1.0 - overlap))
   is_2d = (len(audio.shape) == 2)
+  print("stft_np is_2d: ", is_2d)
 
   if pad_end:
     n_samples_initial = int(audio.shape[-1])
@@ -61,6 +62,7 @@ def stft_np(audio, frame_size=2048, overlap=0.75, pad_end=True):
     pad = n_samples_final - n_samples_initial
     padding = ((0, 0), (0, pad)) if is_2d else ((0, pad),)
     audio = np.pad(audio, padding, 'constant')
+    print("audio before stft shape: ", audio.shape)
 
   def stft_fn(y):
     return librosa.stft(y=y,
@@ -289,10 +291,13 @@ def compute_loudness(audio,
 
   # Remove temporary batch dimension.
   loudness = loudness[0] if is_1d else loudness
+  print("shape of audio: ", audio.shape)
+  print("sample rate: ", sample_rate)
 
   # Compute expected length of loudness vector
   n_secs = audio.shape[-1] / float(
       sample_rate)  # `n_secs` can have milliseconds
+  print("n_secs: ", n_secs)
   expected_len = int(n_secs * frame_rate)
   print("expected length: ", expected_len)
   print("shape of loudness before pad/trim: ", loudness.shape)
@@ -354,19 +359,24 @@ def compute_loudness_mel_spec(mel_spec,
   #overlap = 1 - hop_size / n_fft
   #stft_fn = stft if use_tf else stft_np
   #s = stft_fn(audio, frame_size=n_fft, overlap=overlap, pad_end=True)
+  is_2d = (len(mel_spec.shape) == 2)
+  mel_spec = mel_spec[lib.newaxis, :] if is_2d else mel_spec
+  print("mel spec shape before computing power: ", mel_spec.shape)
 
   # Compute power.
   amplitude = lib.abs(mel_spec)
   power_db = amplitude_to_db(amplitude, use_tf=use_tf)
 
   # Perceptual weighting.
-  if sample_rate == 44100:
-      nfft_match = 3438
-  elif sample_rate == 22050:
-      nfft_match = 1718
-  else:
-      nfft_match = n_fft
-  frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=nfft_match)
+#   if sample_rate == 44100:
+#       nfft_match = 3438
+#   elif sample_rate == 22050:
+#       nfft_match = 1718
+#   else:
+#       nfft_match = n_fft
+  # Num mel channels is 80 by default (currently at least)
+  nfft_match = 158
+  frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=nfft_match) # returns (1 + n_ftt/2,) dims
   a_weighting = librosa.A_weighting(frequencies)[lib.newaxis, lib.newaxis, :]
   # For broadcasting to match 2D mel spec, weights also need to be 2D, not 3D
   #a_weighting = librosa.A_weighting(frequencies)[lib.newaxis, :]
@@ -384,10 +394,11 @@ def compute_loudness_mel_spec(mel_spec,
   # Remove temporary batch dimension.
   loudness = loudness[0] if is_1d else loudness
 
-  # Compute expected length of loudness vector
+  # Compute expected length of loudness vector (using original audio as reference, NOT mel spec)
   n_secs = mel_spec.shape[-1] / float(
       sample_rate)  # `n_secs` can have milliseconds
-  expected_len = int(n_secs * frame_rate) * 10 # To match num_mel_channels=80 for the mel specs
+  #expected_len = int(n_secs * frame_rate) # To match num_mel_channels=80 for the mel specs
+  expected_len = loudness.shape[-1]
   print("expected length: ", expected_len)
   print("shape of loudness before pad/trim: ", loudness.shape)
 
