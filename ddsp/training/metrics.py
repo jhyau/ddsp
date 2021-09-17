@@ -73,7 +73,7 @@ def compute_audio_features_mel_spec(mel_spec,
                                     sample_rate=44100,
                                     frame_rate=225):
     """Compute features from mel spectrogram"""
-    audio_feats = {'mel_spec': mel_spec}
+    audio_feats = {'audio': mel_spec}
     audio = squeeze(mel_spec)
 
     # Get loudness of the mel spectrogram

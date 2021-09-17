@@ -275,11 +275,13 @@ def compute_loudness(audio,
   # Compute power.
   amplitude = lib.abs(s)
   power_db = amplitude_to_db(amplitude, use_tf=use_tf)
+  print("power_db shape: ", power_db.shape)
 
   # Perceptual weighting.
   frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=n_fft)
   a_weighting = librosa.A_weighting(frequencies)[lib.newaxis, lib.newaxis, :]
   loudness = power_db + a_weighting
+  print("loudness shape: ", loudness.shape)
 
   # Set dynamic range.
   loudness -= ref_db
@@ -366,7 +368,12 @@ def compute_loudness_mel_spec(mel_spec,
   # Compute power.
   amplitude = lib.abs(mel_spec)
   power_db = amplitude_to_db(amplitude, use_tf=use_tf)
-
+  print("power_db: ", power_db)
+    
+  # Computing power with directly from mel spec
+  power_db_lib = librosa.power_to_db(mel_spec, ref=10)
+  print("power_db_librosa: ", power_db_lib)
+    
   # Perceptual weighting.
 #   if sample_rate == 44100:
 #       nfft_match = 3438

@@ -231,7 +231,7 @@ class ResnetSinusoidalEncoder(nn.DictLayer):
                               ('amplitudes', 100),
                               ('noise_magnitudes', 60)),
                spectral_fn=spectral_ops.compute_logmel,
-               size='tiny',
+               size='small',
                **kwargs):
     super().__init__(output_keys=[key for key, dim in output_splits], **kwargs)
     self.output_splits = output_splits
