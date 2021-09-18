@@ -283,7 +283,10 @@ class Sinusoidal(processors.Processor):
       amplitudes = self.amp_scale_fn(amplitudes)
 
     if self.freq_scale_fn is not None:
-      frequencies = self.freq_scale_fn(frequencies, scale=self.freq_scale, hz_max=self.hz_max)
+      if self.freq_scale_fn.__name__ == "frequencies_critical_bands": # only this function has "scale" param
+        frequencies = self.freq_scale_fn(frequencies, scale=self.freq_scale, hz_max=self.hz_max)
+      else:
+        frequencies = self.freq_scale_fn(frequencies, hz_max=self.hz_max)
       amplitudes = core.remove_above_nyquist(frequencies,
                                              amplitudes,
                                              self.sample_rate)

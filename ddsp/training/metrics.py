@@ -73,7 +73,9 @@ def compute_audio_features_mel_spec(mel_spec,
                                     sample_rate=44100,
                                     frame_rate=225):
     """Compute features from mel spectrogram"""
-    audio_feats = {'audio': mel_spec}
+    # Input to ResnetSinusoidalEncoder needs dims (batch, 64000, 1)
+    
+    audio_feats = {'audio': mel_spec[np.newaxis,:,:]}
     audio = squeeze(mel_spec)
 
     # Get loudness of the mel spectrogram

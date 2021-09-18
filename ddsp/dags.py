@@ -148,6 +148,7 @@ class DAGLayer(tfkl.Layer):
       A nested dictionary of all the output tensors.
     """
     inputs = core.copy_if_tf_function(inputs)
+    print("In dag, inputs to run_dag: ", inputs.keys())
     # Initialize the outputs with inputs to the dag.
     outputs = {'inputs': inputs}
     # TODO(jesseengel): Remove this cluttering of the base namespace. Only there
@@ -164,6 +165,7 @@ class DAGLayer(tfkl.Layer):
 
       # Get the inputs to the node.
       inputs = [core.nested_lookup(key, outputs) for key in input_keys]
+      print("Necessary input_keys: ", input_keys)
 
       if verbose:
         shape = lambda d: tf.nest.map_structure(lambda x: list(x.shape), d)

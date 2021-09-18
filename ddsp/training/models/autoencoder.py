@@ -60,8 +60,12 @@ class Autoencoder(Model):
   def call(self, features, training=True):
     """Run the core of the network, get predictions and loss."""
     conditioning = self.encode(features, training=training)
-    pg_in = self.decoder(conditioning, training=training)
+    if self.decoder is not None:
+        pg_in = self.decoder(conditioning, training=training)
+    else:
+        pg_in = conditioning
     pg_in.update(conditioning)
+    print("Input to processor group: ", pg_in.keys())
     outputs = self.processor_group.get_controls(pg_in)
     outputs['audio_synth'] = self.processor_group.get_signal(outputs)
     if training:

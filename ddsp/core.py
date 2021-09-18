@@ -765,6 +765,8 @@ def remove_above_nyquist(frequency_envelopes: tf.Tensor,
   """
   frequency_envelopes = tf_float32(frequency_envelopes)
   amplitude_envelopes = tf_float32(amplitude_envelopes)
+  print("Size of frequency envelope: ", frequency_envelopes.shape)
+  print("size of amplitude envelop: ", amplitude_envelopes.shape)
 
   amplitude_envelopes = tf.where(
       tf.greater_equal(frequency_envelopes, sample_rate / 2.0),
