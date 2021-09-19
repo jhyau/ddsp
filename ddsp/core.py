@@ -574,6 +574,7 @@ def upsample_with_windows(inputs: tf.Tensor,
 
   n_frames = int(inputs.shape[1])
   n_intervals = (n_frames - 1)
+  print(f"n_frames: {n_frames} and n_intervals: {n_intervals}")
 
   if n_frames >= n_timesteps:
     raise ValueError('Upsample with windows cannot be used for downsampling'
@@ -1166,9 +1167,11 @@ def fft_convolve(audio: tf.Tensor,
   frame_size = int(np.ceil(audio_size / n_ir_frames))
   hop_size = frame_size
   audio_frames = tf.signal.frame(audio, frame_size, hop_size, pad_end=True)
+  print("audio_frames shape: ", audio_frames.shape)
 
   # Check that number of frames match.
   n_audio_frames = int(audio_frames.shape[1])
+  print(f"n_audio_frames: {n_audio_frames} and n_ir_frames: {n_ir_frames}")
   if n_audio_frames != n_ir_frames:
     raise ValueError(
         'Number of Audio frames ({}) and impulse response frames ({}) do not '

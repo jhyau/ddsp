@@ -162,6 +162,8 @@ class DAGLayer(tfkl.Layer):
       module = getattr(self, module_key)
       # Optionally specify output keys if module does not return dict.
       output_keys = node[2] if len(node) > 2 else None
+    
+      print("Current output keys (will be used for next processor input): ", outputs.keys())
 
       # Get the inputs to the node.
       inputs = [core.nested_lookup(key, outputs) for key in input_keys]
