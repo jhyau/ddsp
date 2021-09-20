@@ -45,6 +45,8 @@ class ZEncoder(nn.DictLayer):
 
   def call(self, *args, **unused_kwargs):
     """Takes in input tensors and returns a latent tensor z."""
+    print("number of inputs to z encoder: ", len(args))
+    print("keyword arguments: ", unused_kwargs)
     time_steps = None
     if 'f0_scaled' in unused_kwargs:
       time_steps = int(unused_kwargs['f0_scaled'].shape[1])
@@ -138,6 +140,7 @@ class MfccTimeDistributedRnnEncoder(ZEncoder):
     self.dense_out = tfkl.Dense(z_dims)
 
   def compute_z(self, audio):
+    print("Computing mfccs and latent z from audio: ", audio.shape)
     mfccs = spectral_ops.compute_mfcc(
         audio,
         sample_rate=self.sample_rate,
