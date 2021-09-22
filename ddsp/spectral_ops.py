@@ -97,6 +97,8 @@ def compute_mel(audio,
                 pad_end=True):
   """Calculate Mel Spectrogram."""
   mag = compute_mag(audio, fft_size, overlap, pad_end)
+  print("Shape of mag from compute_mel: ", mag.shape)
+  # TODO: Figure out which one is the time dimension, and which is num mel channels
   # num_spectrogram_bins = int(mag.shape[-1])
   num_spectrogram_bins = tf.cast(tf.shape(mag)[-1], tf.int32)
   if not bins:
@@ -148,9 +150,38 @@ def compute_logmel(audio,
 
 @gin.register
 def compute_logmel_spec(mel_spec,
-                        sample_rate=44100):
-    return safe_log(mel_spec)
+                        sample_rate=44100,
+                        lo_hz=80.0,
+                        hi_hz=7600.0,
+                        bins=80,
+                        fft_size=1024,
+                        overlap=0.75,
+                        pad_end=True):
+    mel = compute_mel_spec_process(mel_spec, sample_rate, lo_hz, hi_hz, bins, fft_size, overlap, pad_end)
+    return safe_log(mel)
 
+@gin.register
+def compute_mel_spec_process(mel_spec,
+                sample_rate=16000,
+                lo_hz=0.0,
+                hi_hz=8000.0,
+                bins=64,
+                fft_size=2048,
+                overlap=0.75,
+                pad_end=True):
+  """Processes a given Mel Spectrogram."""
+  #mag = compute_mag(audio, fft_size, overlap, pad_end)
+  mag = tf_float32(mel_spec)
+  # num_spectrogram_bins = int(mag.shape[-1])
+  num_spectrogram_bins = tf.cast(tf.shape(mag)[-1], tf.int32)
+  if not bins:
+    bins = int(fft_size / 4) + 1
+  linear_to_mel_matrix = tf.signal.linear_to_mel_weight_matrix(
+      bins, num_spectrogram_bins, sample_rate, lo_hz, hi_hz)
+  mel = tf.tensordot(mag, linear_to_mel_matrix, 1)
+  mel.set_shape(mag.shape[:-1].concatenate(linear_to_mel_matrix.shape[-1:]))
+  print("Final shape of mel spec: ", mel.shape)
+  return mel
 
 @gin.register
 def compute_mfcc(audio,
