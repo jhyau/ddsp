@@ -175,6 +175,24 @@ def compute_mfcc(audio,
   mfccs = tf.signal.mfccs_from_log_mel_spectrograms(logmel)
   return mfccs[..., :mfcc_bins]
 
+@gin.register
+def compute_mfcc_mel_spec(mel_spec,
+                 sample_rate=16000,
+                 lo_hz=20.0,
+                 hi_hz=8000.0,
+                 fft_size=1024,
+                 mel_bins=128,
+                 mfcc_bins=13,
+                 overlap=0.75,
+                 pad_end=True):
+  """Calculate Mel-frequency Cepstral Coefficients."""
+  logmel = compute_logmel_spec(
+      mel_spec,
+      sample_rate=sample_rate)
+  mfccs = tf.signal.mfccs_from_log_mel_spectrograms(logmel)
+  return mfccs[..., :mfcc_bins]
+
+
 
 def diff(x, axis=-1):
   """Take the finite difference of a tensor along an axis.
@@ -270,6 +288,8 @@ def compute_loudness(audio,
   overlap = 1 - hop_size / n_fft
   stft_fn = stft if use_tf else stft_np
   s = stft_fn(audio, frame_size=n_fft, overlap=overlap, pad_end=True)
+  print("ddsp author hop size: ", hop_size)
+  print("overlap: ", overlap)
   print("Computing loudness after stft shape: ", s.shape)
 
   # Compute power.
@@ -311,10 +331,10 @@ def compute_loudness(audio,
 
 
 @gin.register
-def compute_loudness_mel_spec(mel_spec,
+def compute_loudness_mel_spec(mel_spec, audio,
                      sample_rate=44100,
-                     frame_rate=225,
-                     n_fft=2048,
+                     frame_rate=172,
+                     n_fft=1024,
                      range_db=LD_RANGE,
                      ref_db=20.7,
                      use_tf=False):
@@ -338,11 +358,13 @@ def compute_loudness_mel_spec(mel_spec,
   Returns:
     Loudness in decibels. Shape [batch_size, n_frames] or [n_frames,].
   """
-  if sample_rate % frame_rate != 0:
-    raise ValueError(
-        'frame_rate: {} must evenly divide sample_rate: {}.'
-        'For default frame_rate: 250Hz, suggested sample_rate: 16kHz or 48kHz'
-        .format(frame_rate, sample_rate))
+#   if sample_rate % frame_rate != 0:
+#     raise ValueError(
+#         'frame_rate: {} must evenly divide sample_rate: {}.'
+#         'For default frame_rate: 250Hz, suggested sample_rate: 16kHz or 48kHz'
+#         .format(frame_rate, sample_rate))
+    
+  print("s shape input to compute_loudness function: ", audio.shape)
 
   # Pick tensorflow or numpy.
   lib = tf if use_tf else np
@@ -351,16 +373,28 @@ def compute_loudness_mel_spec(mel_spec,
   # if audio sampling rate=44100, dims will be (80, 1720)
   # if audio sampling rate=22050, dims will be (80, 860)
   mel_spec = tf_float32(mel_spec) if use_tf else mel_spec
+    
+  # Make inputs tensors for tensorflow.
+  audio = tf_float32(audio) if use_tf else audio
+
+  # Temporarily a batch dimension for single examples.
+  is_1d = (len(audio.shape) == 1)
+  audio = audio[lib.newaxis, :] if is_1d else audio
 
   # Temporarily a batch dimension for single examples.
   is_1d = (len(mel_spec.shape) == 1)
   mel_spec = mel_spec[lib.newaxis, :] if is_1d else mel_spec
 
   # Take STFT.
-  #hop_size = sample_rate // frame_rate
-  #overlap = 1 - hop_size / n_fft
-  #stft_fn = stft if use_tf else stft_np
-  #s = stft_fn(audio, frame_size=n_fft, overlap=overlap, pad_end=True)
+  print("s shape before stft shape: ", audio.shape)
+  hop_size = sample_rate // frame_rate #256
+  overlap = 1 - hop_size / n_fft
+  stft_fn = stft if use_tf else stft_np
+  s = stft_fn(audio, frame_size=n_fft, overlap=overlap, pad_end=True)
+  print("hop size: ", hop_size)
+  print("overlap: ", overlap)
+  print("Computing s after stft shape: ", s.shape)
+  
   is_2d = (len(mel_spec.shape) == 2)
   mel_spec = mel_spec[lib.newaxis, :] if is_2d else mel_spec
   print("mel spec shape before computing power: ", mel_spec.shape)
@@ -412,7 +446,7 @@ def compute_loudness_mel_spec(mel_spec,
   # Pad with `-range_db` noise floor or trim vector
   loudness = pad_or_trim_to_expected_length(
       loudness, expected_len, -range_db, use_tf=use_tf)
-  return loudness
+  return loudness, s
 
 
 @gin.register

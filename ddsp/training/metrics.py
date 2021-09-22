@@ -68,10 +68,10 @@ def compute_audio_features(audio,
   return audio_feats
 
 
-def compute_audio_features_mel_spec(mel_spec,
-                                    n_fft=2048,
+def compute_audio_features_mel_spec(mel_spec, orig_audio,
+                                    n_fft=1024,
                                     sample_rate=44100,
-                                    frame_rate=225):
+                                    frame_rate=172):
     """Compute features from mel spectrogram"""
     # Input to ResnetSinusoidalEncoder needs dims (batch, 64000, 1)
     
@@ -79,8 +79,10 @@ def compute_audio_features_mel_spec(mel_spec,
     audio = squeeze(mel_spec)
 
     # Get loudness of the mel spectrogram
-    audio_feats['loudness_db'] = ddsp.spectral_ops.compute_loudness_mel_spec(
-            mel_spec, sample_rate, frame_rate, n_fft)
+    orig_audio = squeeze(orig_audio)
+    print("First Original audio shape: ", orig_audio.shape)
+    audio_feats['loudness_db'], audio_feats['s'] = ddsp.spectral_ops.compute_loudness_mel_spec(
+            mel_spec, orig_audio, sample_rate, frame_rate, n_fft)
 
     # Get F0 frequency
 
