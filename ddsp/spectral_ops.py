@@ -98,7 +98,8 @@ def compute_mel(audio,
   """Calculate Mel Spectrogram."""
   mag = compute_mag(audio, fft_size, overlap, pad_end)
   print("Shape of mag from compute_mel: ", mag.shape)
-  # TODO: Figure out which one is the time dimension, and which is num mel channels
+  # mag shape: (1, time dim, num_bins)
+  print("Values of mag: ", mag)
   # num_spectrogram_bins = int(mag.shape[-1])
   num_spectrogram_bins = tf.cast(tf.shape(mag)[-1], tf.int32)
   if not bins:
@@ -143,16 +144,42 @@ def compute_logmel(audio,
                    bins=64,
                    fft_size=2048,
                    overlap=0.75,
-                   pad_end=True):
+                   pad_end=True,
+                   mel_samples=None):
+  print(f"sample rate: {sample_rate}, bin: {bins}, fft_size: {fft_size}, overlap: {overlap}")
   mel = compute_mel(audio, sample_rate, lo_hz, hi_hz, bins, fft_size, overlap, pad_end)
+  print("mel shape in compute_logmel: ", mel.shape)
+  # Make sure it matches the mel_sample shape
+  if mel_samples is not None:
+      mel = mel[:, :mel_samples, :]
+  print("final mel shape in compute_logmel: ", mel.shape)
+  return safe_log(mel)
+
+
+@gin.register
+def compute_logmel_resnet(audio,
+                   sample_rate=44100,
+                   lo_hz=0.0,
+                   hi_hz=16000.0,
+                   bins=80,
+                   fft_size=1024,
+                   overlap=0.75,
+                   pad_end=True,
+                   mel_samples=1720):
+  mel = compute_mel(audio, sample_rate, lo_hz, hi_hz, bins, fft_size, overlap, pad_end)
+  print("mel shape in compute_logmel: ", mel.shape)
+  # Make sure it matches the mel_sample shape
+  if mel_samples is not None:
+      mel = mel[:, :mel_samples, :]
+  print("final mel shape in compute_logmel: ", mel.shape)
   return safe_log(mel)
 
 
 @gin.register
 def compute_logmel_spec(mel_spec,
                         sample_rate=44100,
-                        lo_hz=80.0,
-                        hi_hz=7600.0,
+                        lo_hz=0.0,
+                        hi_hz=16000.0,
                         bins=80,
                         fft_size=1024,
                         overlap=0.75,
@@ -170,8 +197,9 @@ def compute_mel_spec_process(mel_spec,
                 overlap=0.75,
                 pad_end=True):
   """Processes a given Mel Spectrogram."""
-  #mag = compute_mag(audio, fft_size, overlap, pad_end)
-  mag = tf_float32(mel_spec)
+  mag = compute_mag_mel_spec(mel_spec, fft_size, overlap, pad_end)
+  print("mel spec mag: ", mag)
+  #mag = tf_float32(mel_spec)
   # num_spectrogram_bins = int(mag.shape[-1])
   num_spectrogram_bins = tf.cast(tf.shape(mag)[-1], tf.int32)
   if not bins:

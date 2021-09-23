@@ -250,6 +250,7 @@ class ResnetSinusoidalEncoder(nn.DictLayer):
 
     # [batch, 64000, 1]
     mag = self.spectral_fn(audio)
+    print("after compute log mel function: ", mag)
 
     # [batch, 125, 229]
     mag = mag[:, :, :, tf.newaxis]

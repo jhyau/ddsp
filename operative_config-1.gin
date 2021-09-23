@@ -6,6 +6,7 @@ import ddsp.spectral_ops
 # ==============================================================================
 batch_size = 32
 learning_rate = 0.0003
+input_type = 'mel_spec' # 'mel_spec' or 'audio'
 
 # Parameters for processors.Add:
 # ==============================================================================
@@ -36,7 +37,8 @@ DefaultPreprocessor.time_steps = 1000
 # Parameters for FilteredNoise:
 # ==============================================================================
 FilteredNoise.initial_bias = -5.0
-FilteredNoise.n_samples = 440320 # (64 * 6880)
+FilteredNoise.n_samples = 440320 # (256 * 1720 <time dim>)
+#FilteredNoise.n_samples = 138240
 FilteredNoise.name = 'filtered_noise'
 FilteredNoise.scale_fn = @core.exp_sigmoid
 FilteredNoise.window_size = 0
@@ -45,18 +47,20 @@ FilteredNoise.window_size = 0
 # ==============================================================================
 get_model.model = @models.Autoencoder()
 
-# Parameters for Harmonic:
-# ==============================================================================
-Harmonic.n_samples = 64000
-Harmonic.name = 'harmonic'
-Harmonic.normalize_below_nyquist = True
-Harmonic.sample_rate = 16000
-Harmonic.scale_fn = @core.exp_sigmoid
-
 # Parameters for Sinusoidal
 # ==============================================================================
-Sinusoidal.n_samples = 440320 # num time steps *4 so it can upsample
+Sinusoidal.n_samples = 440320 # num time steps * 256 so it can upsample
+#Sinusoidal.n_samples = 138240 # Based on reading in .wav file
 Sinusoidal.sample_rate = 44100
+
+# Parameters for ResnetSinusoidalEncoder:
+# ==============================================================================
+ResnetSinusoidalEncoder.spectral_fn = @compute_logmel_spec
+#ResnetSinusoidalEncoder.spectral_fn = @compute_logmel
+#ResnetSinusoidalEncoder.spectral_fn = @compute_logmel_resnet
+ResnetSinusoidalEncoder.size = 'small'
+ResnetSinusoidalEncoder.output_splits = \
+    (('frequencies', 100), ('amplitudes', 100), ('noise_magnitudes', 60))
 
 # Parameters for oscillator_bank:
 # ==============================================================================
@@ -78,13 +82,6 @@ Reverb.name = 'reverb'
 Reverb.reverb_length = 48000
 Reverb.trainable = True
 
-# Parameters for ResnetSinusoidalEncoder:
-# ==============================================================================
-ResnetSinusoidalEncoder.spectral_fn = @compute_logmel_spec
-ResnetSinusoidalEncoder.size = 'small'
-ResnetSinusoidalEncoder.output_splits = \
-    (('frequencies', 100), ('amplitudes', 100), ('noise_magnitudes', 60))
-
 # Parameters for RnnFcDecoder:
 # ==============================================================================
 RnnFcDecoder.ch = 512
@@ -98,6 +95,14 @@ RnnFcDecoder.rnn_type = 'gru'
 # Parameters for run_dag:
 # ==============================================================================
 run_dag.verbose = True
+
+# Parameters for Harmonic:
+# ==============================================================================
+Harmonic.n_samples = 64000
+Harmonic.name = 'harmonic'
+Harmonic.normalize_below_nyquist = True
+Harmonic.sample_rate = 16000
+Harmonic.scale_fn = @core.exp_sigmoid
 
 # Parameters for SoloViolin:
 # ==============================================================================
