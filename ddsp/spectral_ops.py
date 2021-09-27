@@ -231,7 +231,9 @@ def compute_mfcc(audio,
       fft_size=fft_size,
       overlap=overlap,
       pad_end=pad_end)
+  print("Original MFCC logmel shape: ", logmel.shape)
   mfccs = tf.signal.mfccs_from_log_mel_spectrograms(logmel)
+  print("Original MFCC shape: ", mfccs.shape)
   return mfccs[..., :mfcc_bins]
 
 @gin.register
@@ -248,7 +250,9 @@ def compute_mfcc_mel_spec(mel_spec,
   logmel = compute_logmel_spec(
       mel_spec,
       sample_rate=sample_rate)
+  print("Mel spec MFCC logmel shape: ", logmel.shape)
   mfccs = tf.signal.mfccs_from_log_mel_spectrograms(logmel)
+  print("mel spec mfcc shape: ", mfccs.shape)
   return mfccs[..., :mfcc_bins]
 
 
