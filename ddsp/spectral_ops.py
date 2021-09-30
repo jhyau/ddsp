@@ -97,9 +97,8 @@ def compute_mel(audio,
                 pad_end=True):
   """Calculate Mel Spectrogram."""
   mag = compute_mag(audio, fft_size, overlap, pad_end)
-  print("Shape of mag from compute_mel: ", mag.shape)
+  print("matrix of mag from compute_mel: ", mag)
   # mag shape: (1, time dim, num_bins)
-  print("Values of mag: ", mag)
   # num_spectrogram_bins = int(mag.shape[-1])
   num_spectrogram_bins = tf.cast(tf.shape(mag)[-1], tf.int32)
   if not bins:
@@ -108,6 +107,7 @@ def compute_mel(audio,
       bins, num_spectrogram_bins, sample_rate, lo_hz, hi_hz)
   mel = tf.tensordot(mag, linear_to_mel_matrix, 1)
   mel.set_shape(mag.shape[:-1].concatenate(linear_to_mel_matrix.shape[-1:]))
+  print("matrix of mel from compute_mel: ", mel)
   return mel
 
 @gin.register
@@ -185,6 +185,7 @@ def compute_logmel_spec(mel_spec,
                         overlap=0.75,
                         pad_end=True):
     mel = compute_mel_spec_process(mel_spec, sample_rate, lo_hz, hi_hz, bins, fft_size, overlap, pad_end)
+    print("mel before safe log: ", mel)
     return safe_log(mel)
 
 @gin.register
@@ -206,6 +207,7 @@ def compute_mel_spec_process(mel_spec,
     bins = int(fft_size / 4) + 1
   linear_to_mel_matrix = tf.signal.linear_to_mel_weight_matrix(
       bins, num_spectrogram_bins, sample_rate, lo_hz, hi_hz)
+#   print("linear to mel matrix: ", linear_to_mel_matrix)
   mel = tf.tensordot(mag, linear_to_mel_matrix, 1)
   mel.set_shape(mag.shape[:-1].concatenate(linear_to_mel_matrix.shape[-1:]))
   print("Final shape of mel spec: ", mel.shape)
@@ -231,6 +233,7 @@ def compute_mfcc(audio,
       fft_size=fft_size,
       overlap=overlap,
       pad_end=pad_end)
+  print("logmel: ", logmel)
   print("Original MFCC logmel shape: ", logmel.shape)
   mfccs = tf.signal.mfccs_from_log_mel_spectrograms(logmel)
   print("Original MFCC shape: ", mfccs.shape)
@@ -245,12 +248,22 @@ def compute_mfcc_mel_spec(mel_spec,
                  mel_bins=128,
                  mfcc_bins=13,
                  overlap=0.75,
-                 pad_end=True):
+                 pad_end=True,
+                 mel_mel=False):
   """Calculate Mel-frequency Cepstral Coefficients."""
-  logmel = compute_logmel_spec(
-      mel_spec,
-      sample_rate=sample_rate)
+  if mel_mel:
+      logmel = compute_logmel_spec(
+                mel_spec,
+                sample_rate=sample_rate)
+      print("log mel mel: ", logmel)
+  else:
+      MAX_WAV_VALUE = 32768.0
+      # Need to take absolute value to deal with the negatives from the waveglow mel specs
+      #logmel = safe_log(tf.abs(mel_spec)) # This will set any value <= 1e-5 to be 1e-5. So negative nums don't work!
+      logmel = mel_spec
+
   print("Mel spec MFCC logmel shape: ", logmel.shape)
+  print("log mel values: ", logmel)
   mfccs = tf.signal.mfccs_from_log_mel_spectrograms(logmel)
   print("mel spec mfcc shape: ", mfccs.shape)
   return mfccs[..., :mfcc_bins]

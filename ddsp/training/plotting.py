@@ -36,6 +36,7 @@ def specplot(audio,
     audio = audio[0]
 
   logmag = spectral_ops.compute_logmag(core.tf_float32(audio), size=size)
+  print("Shape of logmag: ", logmag.shape)
   # logmag = spectral_ops.compute_logmel(core.tf_float32(audio), lo_hz=8.0, bins=80, fft_size=size)
   # logmag = spectral_ops.compute_mfcc(core.tf_float32(audio), mfcc_bins=40, fft_size=size)
   if rotate:
@@ -63,6 +64,9 @@ def specplot_mel_spec(mel_spec,
   # If batched, take first element.
   #if len(mel_spec.shape) == 2:
   #  mel_spec = mel_spec[0]
+    
+  # Shape needs to be (time dim, mel bins)
+  #mel_spec = tf.transpose(mel_spec)
 
   logmag = spectral_ops.compute_logmag_mel_spec(core.tf_float32(mel_spec), size=size)
   # logmag = spectral_ops.compute_logmel(core.tf_float32(audio), lo_hz=8.0, bins=80, fft_size=size)
