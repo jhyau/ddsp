@@ -184,9 +184,10 @@ def compute_logmel_spec(mel_spec,
                         fft_size=1024,
                         overlap=0.75,
                         pad_end=True):
-    mel = compute_mel_spec_process(mel_spec, sample_rate, lo_hz, hi_hz, bins, fft_size, overlap, pad_end)
-    print("mel before safe log: ", mel)
-    return safe_log(mel)
+    #mel = compute_mel_spec_process(mel_spec, sample_rate, lo_hz, hi_hz, bins, fft_size, overlap, pad_end)
+    print("mel as is: ", mel_spec)
+    # Input waveglow mel spectrograms ARE log mel spectrograms
+    return mel_spec #safe_log(mel)
 
 @gin.register
 def compute_mel_spec_process(mel_spec,
@@ -249,17 +250,23 @@ def compute_mfcc_mel_spec(mel_spec,
                  mfcc_bins=13,
                  overlap=0.75,
                  pad_end=True,
-                 mel_mel=False):
+                 undo_waveglow=False):
   """Calculate Mel-frequency Cepstral Coefficients."""
-  if mel_mel:
-      logmel = compute_logmel_spec(
-                mel_spec,
-                sample_rate=sample_rate)
-      print("log mel mel: ", logmel)
-  else:
+#   logmel = compute_logmel_spec(
+#             mel_spec,
+#             sample_rate=sample_rate)
+  if undo_waveglow:
       MAX_WAV_VALUE = 32768.0
+      print(f"Undo waveglow division by {MAX_WAV_VALUE}")
       # Need to take absolute value to deal with the negatives from the waveglow mel specs
       #logmel = safe_log(tf.abs(mel_spec)) # This will set any value <= 1e-5 to be 1e-5. So negative nums don't work!
+      # Note that waveglow mel specs ARE log mel spectrograms! So don't need to take additional log
+
+      # Try to multiply in the MAX_WAV_VALUE before taking log again for log mel spec
+      mel = tf.math.exp(mel_spec) * MAX_WAV_VALUE
+      logmel = safe_log(mel)
+  else:
+      print("passing in the log mel spectrogram as is...")
       logmel = mel_spec
 
   print("Mel spec MFCC logmel shape: ", logmel.shape)
