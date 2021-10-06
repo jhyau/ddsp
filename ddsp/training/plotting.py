@@ -29,6 +29,7 @@ def specplot(audio,
              vmax=1,
              rotate=True,
              size=512 + 256,
+             axs=None,
              **matshow_kwargs):
   """Plot the log magnitude spectrogram of audio."""
   # If batched, take first element.
@@ -36,22 +37,36 @@ def specplot(audio,
     audio = audio[0]
 
   logmag = spectral_ops.compute_logmag(core.tf_float32(audio), size=size)
-  print("Shape of logmag: ", logmag.shape)
+  #print("Shape of logmag: ", logmag.shape)
   # logmag = spectral_ops.compute_logmel(core.tf_float32(audio), lo_hz=8.0, bins=80, fft_size=size)
   # logmag = spectral_ops.compute_mfcc(core.tf_float32(audio), mfcc_bins=40, fft_size=size)
   if rotate:
     logmag = np.rot90(logmag)
   # Plotting.
+  if axs is not None:
+    axs.matshow(logmag,
+              vmin=vmin,
+              vmax=vmax,
+              cmap=plt.cm.magma,
+              aspect='auto',
+              **matshow_kwargs)
+    #axs.xticks()
+    #axs.yticks()
+    axs.set_xlabel('Time')
+    axs.set_ylabel('Frequency')
+    return None
+    
   plt.matshow(logmag,
               vmin=vmin,
               vmax=vmax,
               cmap=plt.cm.magma,
               aspect='auto',
               **matshow_kwargs)
-  plt.xticks([])
-  plt.yticks([])
+  plt.xticks()
+  plt.yticks()
   plt.xlabel('Time')
   plt.ylabel('Frequency')
+  #plt.tight_layout()
 
 
 def specplot_mel_spec(mel_spec,
