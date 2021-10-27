@@ -1150,11 +1150,17 @@ def fft_convolve(audio: tf.Tensor,
 
   # Add a frame dimension to impulse response if it doesn't have one.
   ir_shape = impulse_response.shape.as_list()
+
+  # TODO: Check more carefully, when does the 4D case occur?
+  if len(ir_shape) >= 4:
+    ir_shape = tf.squeeze(impulse_response).shape.as_list()
+
   if len(ir_shape) == 2:
     impulse_response = impulse_response[:, tf.newaxis, :]
     ir_shape = impulse_response.shape.as_list()
 
   # Get shapes of audio and impulse response.
+  print("impulse response shape: ", ir_shape)
   batch_size_ir, n_ir_frames, ir_size = ir_shape
   batch_size, audio_size = audio.shape.as_list()
 
