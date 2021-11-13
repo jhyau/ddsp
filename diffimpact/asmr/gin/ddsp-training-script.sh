@@ -5,6 +5,7 @@ for entry in $clips
 		path="/juno/u/jyau/regnet/ddsp/diffimpact/asmr/regnet-labels/3hr-"
 		path+=$entry
 		if [ ! -d "$path" ]; then
+			echo $entry
 			echo $path
 			python /juno/u/jyau/regnet/ddsp/diffimpact/asmr/train.py \
 			--model-type diffimpact \
@@ -12,7 +13,7 @@ for entry in $clips
 		        --validation-pattern "/juno/u/jyau/regnet/data/features/ASMR/orig_asmr_by_material_clips/audio_10s_44100hz_ddsp/3hr/${entry}/val/*.wav" \
 			--save-dir /juno/u/jyau/regnet/ddsp/diffimpact/asmr/regnet-labels/3hr-${entry}
 
-			#wait $!
+			wait $! # Used to wait for background process, if want to send to background (need to have & added to end of command)
 		fi
 	done
 	
