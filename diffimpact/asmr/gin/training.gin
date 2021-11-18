@@ -1,0 +1,19 @@
+sample.data_provider = @data.AudioProvider()
+
+train.data_provider = @train/data.AudioProvider()
+train/data.AudioProvider.file_pattern = %TRAIN_FILE_PATTERN
+train/data.AudioProvider.append_material_id = True
+train/data.AudioProvider.n_samples = %N_AUDIO_SAMPLES
+train/data.AudioProvider.audio_sample_rate = %AUDIO_SAMPLE_RATE
+train.validation_provider = @valid/data.AudioProvider()
+valid/data.AudioProvider.file_pattern = %VALIDATION_FILE_PATTERN
+valid/data.AudioProvider.append_material_id = True
+valid/data.AudioProvider.n_samples = %N_AUDIO_SAMPLES
+valid/data.AudioProvider.audio_sample_rate = %AUDIO_SAMPLE_RATE
+
+train.trainer = @training.trainers.Trainer()
+Trainer.model = @get_model()
+Trainer.strategy = @training.train_util.get_strategy()
+Trainer.checkpoints_to_keep = 3
+Trainer.learning_rate = 1e-5
+Trainer.grad_clip_norm = 1.0

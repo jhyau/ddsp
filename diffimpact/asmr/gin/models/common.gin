@@ -1,0 +1,61 @@
+
+import ddsp
+import ddsp.training
+
+# =====
+# Model
+# =====
+get_model.model = @models.Autoencoder()
+
+# Encoders
+Autoencoder.encoder = @encoders.MultiEncoder()
+MultiEncoder.encoder_list = [
+  @encoders.MfccTimeDistributedRnnEncoder(),
+  @encoders.EmbeddingContextEncoder(),
+]
+
+MfccTimeDistributedRnnEncoder.mfcc_time_steps = 250
+MfccTimeDistributedRnnEncoder.z_time_steps = 252
+MfccTimeDistributedRnnEncoder.sample_rate = %AUDIO_SAMPLE_RATE
+MfccTimeDistributedRnnEncoder.z_dims = 16
+MfccTimeDistributedRnnEncoder.rnn_type = 'gru'
+MfccTimeDistributedRnnEncoder.rnn_channels = 512
+
+EmbeddingContextEncoder.input_key = 'material_id'
+EmbeddingContextEncoder.output_key = 'material_embedding'
+EmbeddingContextEncoder.vector_length = 8
+
+
+# Decoders
+Autoencoder.decoder = @decoders.MultiDecoder()
+MultiDecoder.decoder_list = [
+  @decoders.RnnFcDecoder(),
+  @decoders.FcDecoder(),
+]
+
+RnnFcDecoder.rnn_channels = 512
+RnnFcDecoder.rnn_type = 'gru'
+RnnFcDecoder.ch = 512
+RnnFcDecoder.layers_per_stack = 3
+RnnFcDecoder.input_keys = ('z',)
+RnnFcDecoder.output_splits = (('magnitudes', 1),
+                              ('stdevs', 1),
+                              ('taus', 1))
+
+FcDecoder.fc_units = 512
+FcDecoder.hidden_layers = 3
+FcDecoder.input_keys = ('material_embedding',)
+
+# Losses
+Autoencoder.losses = [
+    @spectral/losses.SpectralLoss(),
+]
+
+spectral/SpectralLoss.name = 'spectral_loss'
+SpectralLoss.mag_weight = 1.0
+SpectralLoss.logmag_weight = 1.0
+
+# ==============
+# ProcessorGroup
+# ==============
+Autoencoder.processor_group = @processors.ProcessorGroup()

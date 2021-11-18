@@ -1,0 +1,101 @@
+include 'models/common.gin'
+
+# number of modal frequencies is a hyperparameter
+#N_MODAL_FREQUENCIES = 256
+N_MODAL_FREQUENCIES = 64
+
+MfccTimeDistributedRnnEncoder.tcnn_kernel=15
+
+RnnFcDecoder.output_splits = (('magnitudes', 1),
+                              ('stdevs', 1),
+                              ('taus', 1))
+RnnFcDecoder.activity_regularizer = @rnn_fc/tf.keras.regularizers.L1()
+rnn_fc/tf.keras.regularizers.L1.l1 = 1e-6
+
+FcDecoder.output_splits = ( ('gains', %N_MODAL_FREQUENCIES),
+                            ('frequencies', %N_MODAL_FREQUENCIES),
+                            ('dampings', %N_MODAL_FREQUENCIES),
+                            ('tau_bias', 1),
+                            ('acceleration_scalar', 1),
+                            ('reverb_gain', 32),
+                            ('reverb_decay', 1),
+                            ('noise_magnitudes', 100))
+FcDecoder.activity_regularizer = @fc/tf.keras.regularizers.L1()
+fc/tf.keras.regularizers.L1.l1 = 1e-6
+
+# ==============
+# ProcessorGroup
+# ==============
+
+ProcessorGroup.dag = [
+  (@synths.Impact(),
+    ['magnitudes', 'stdevs', 'taus', 'tau_bias']),
+  (@synths.ModalFIR(),
+    ['gains', 'frequencies', 'dampings']),
+  (@processors.Convolve(),
+    ['impact/signal', 'modal_fir/signal']),
+  (@synths.FilteredNoise(),
+    ['noise_magnitudes']),
+  (@add1/processors.Add(),
+    ['filtered_noise/signal', 'convolve/signal']),
+  (@processors.ScalarMultiply(),
+    ['impact/signal', 'acceleration_scalar']),
+  (@add2/processors.Add(),
+    ['add1/signal', 'acceleration_multiply/signal']),
+  (@effects.FilteredNoiseExpDecayReverb(),
+    ['add2/signal', 'reverb_gain', 'reverb_decay']),
+  (@processors.Resample(),
+    ['reverb/signal'])
+]
+
+# Impact Synthesizer
+Impact.name = 'impact'
+Impact.sample_rate = %INTERNAL_SAMPLE_RATE
+Impact.n_samples = %INTERNAL_AUDIO_SAMPLES
+Impact.max_impact_frequency = 20
+Impact.mag_scale_fn = @core.exp_sigmoid
+Impact.timing_adjust = True
+Impact.include_noise = True
+
+# Modal FIR Synthesizer
+ModalFIR.name = 'modal_fir'
+ModalFIR.sample_rate = %INTERNAL_SAMPLE_RATE
+ModalFIR.freq_scale_fn = @core.frequencies_critical_bands
+ModalFIR.freq_scale = 'mel'
+ModalFIR.n_samples = %INTERNAL_SAMPLE_RATE
+ModalFIR.initial_bias=-1.5
+ModalFIR.hz_max=20000.0
+
+# Resample Processor
+Resample.n_timesteps = %N_AUDIO_SAMPLES
+Resample.method = 'linear'
+
+# Filtered Noise Synthesizer
+FilteredNoise.name = 'filtered_noise'
+FilteredNoise.n_samples = %INTERNAL_AUDIO_SAMPLES
+FilteredNoise.window_size = 0
+FilteredNoise.scale_fn = @core.exp_sigmoid
+
+# Convolve
+processors.Convolve.name = 'convolve'
+
+# Add 1
+add1/processors.Add.name = 'add1'
+
+# Scalar Multiply
+ScalarMultiply.name = 'acceleration_multiply'
+
+# Add 2
+add2/processors.Add.name = 'add2'
+
+# Reverb
+FilteredNoiseExpDecayReverb.name = 'reverb'
+FilteredNoiseExpDecayReverb.trainable = False
+FilteredNoiseExpDecayReverb.gain_initial_bias = -3.0
+FilteredNoiseExpDecayReverb.decay_initial_bias = 3.5
+
+# Loss
+spectral/SpectralLoss.loss_type = 'L1'
+spectral/SpectralLoss.mag_weight = 1.0
+spectral/SpectralLoss.logmag_weight = 1.0
+spectral/SpectralLoss.fft_sizes = (2048, 1024, 512, 256)

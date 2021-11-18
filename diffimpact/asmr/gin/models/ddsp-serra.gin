@@ -1,0 +1,38 @@
+include 'models/common.gin'
+
+RnnFcDecoder.output_splits = (('f0_hz', 1),
+                              ('amps', 1),
+                              ('harmonic_distribution', 100),
+                              ('noise_magnitudes', 65))
+
+FcDecoder.output_splits = ( ('reverb_gain', 1),
+                            ('reverb_decay', 1))
+
+# ==============
+# ProcessorGroup
+# ==============
+
+ProcessorGroup.dag = [
+  (@synths.Harmonic(),
+    ['amps', 'harmonic_distribution', 'f0_hz']),
+  (@synths.FilteredNoise(),
+    ['noise_magnitudes']),
+  (@processors.Add(),
+    ['filtered_noise/signal', 'harmonic/signal']),
+]
+
+# Harmonic Synthesizer
+Harmonic.name = 'harmonic'
+Harmonic.sample_rate = %AUDIO_SAMPLE_RATE
+Harmonic.n_samples = %N_AUDIO_SAMPLES
+Harmonic.normalize_below_nyquist = True
+Harmonic.scale_fn = @core.exp_sigmoid
+
+# Filtered Noise Synthesizer
+FilteredNoise.name = 'filtered_noise'
+FilteredNoise.n_samples = %N_AUDIO_SAMPLES
+FilteredNoise.window_size = 0
+FilteredNoise.scale_fn = @core.exp_sigmoid
+
+# Add
+processors.Add.name = 'add'

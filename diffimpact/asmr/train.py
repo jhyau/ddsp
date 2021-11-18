@@ -46,6 +46,7 @@ gin.config.bind_parameter('%TRAIN_FILE_PATTERN', args.train_pattern)
 gin.config.bind_parameter('%VALIDATION_FILE_PATTERN', args.validation_pattern)
 
 print(gin.config.query_parameter('%TRAIN_FILE_PATTERN'))
+print(f"Loaded gin file... \nThe N_MODAL_FREQUENCIES is : {gin.config.query_parameter('%N_MODAL_FREQUENCIES')} ")
 
 # Set dynamic GPU memory growth
 gpus = tf.config.experimental.list_physical_devices('GPU')
