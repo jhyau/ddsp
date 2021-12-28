@@ -195,11 +195,15 @@ class EmbeddingContextEncoder(ContextEncoder):
     self.input_key = input_key
     self.output_key = output_key
 
+    print(f"Input key to EmbeddingContextEncoder: {input_key}")
+    print(f"Output key to EmbeddingContextEncoder: {output_key}")
+
     # Layers.
     self.embedding = nn.embedding(self.vocab_size, self.vector_length)
 
   def compute_encoding(self, inputs):
     """Compute context from embedding."""
+    print(f"input to EmbeddingContextEncoder: {inputs}")
     return self.embedding(tf.cast(inputs, dtype=tf.int32))
 
   def call(self, conditioning):

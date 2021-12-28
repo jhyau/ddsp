@@ -228,7 +228,10 @@ def train(data_provider,
       step = trainer.step  # Step is not iteration if restarting a model.
 
       # Take a step.
-      losses = trainer.train_step(next(dataset_iter))
+      next_item = next(dataset_iter)
+      print(f"Current item: {next_item}")
+      losses = trainer.train_step(next_item)
+      
 
       # Create training loss metrics when starting/restarting training.
       if iteration == 0:
