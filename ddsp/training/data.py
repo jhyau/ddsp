@@ -386,6 +386,7 @@ class AudioProvider(DataProvider):
     self.append_material_id = append_material_id
     if self.append_material_id:
       self.video_table, self.material_table = self.get_tables(self._file_pattern)
+      print(f"Size of video table: {self.video_table.shape}, size of material table: {self.material_table.shape}")
       print(f"Material ID table: {self.material_table}")
     
     def map_fn(filename):
@@ -401,7 +402,7 @@ class AudioProvider(DataProvider):
         material_id = tf.strings.split(f, '-')[1]
         material_id = self.material_table.lookup(tf.strings.join((video_id, material_id), '-'))
         material_id = tf.expand_dims(material_id, axis=0)
-        print(f"material_id: {material_id}")
+        print(f"material_id: {material_id} and video_id: {video_id}")
         video_id = self.video_table.lookup(video_id)
         video_id = tf.expand_dims(video_id, axis=0)
         return tf.data.Dataset.from_tensor_slices({'audio':clipped_audio, 'video_id':[video_id], 'material_id':[material_id], 'filename': [filename]})

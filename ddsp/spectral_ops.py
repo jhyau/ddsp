@@ -234,7 +234,7 @@ def compute_mfcc(audio,
       fft_size=fft_size,
       overlap=overlap,
       pad_end=pad_end)
-  print("logmel: ", logmel)
+  #print("logmel: ", logmel)
   print("Original MFCC logmel shape: ", logmel.shape)
   mfccs = tf.signal.mfccs_from_log_mel_spectrograms(logmel)
   print("Original MFCC shape: ", mfccs.shape)
