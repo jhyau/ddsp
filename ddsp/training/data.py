@@ -386,8 +386,9 @@ class AudioProvider(DataProvider):
     self.append_material_id = append_material_id
     if self.append_material_id:
       self.video_table, self.material_table = self.get_tables(self._file_pattern)
-      print(f"Size of video table: {self.video_table.shape}, size of material table: {self.material_table.shape}")
+      print(f"Size of video table: {self.video_table.size()}, size of material table: {self.material_table.size()}")
       print(f"Material ID table: {self.material_table}")
+      print(f"Material ID table values: {self.material_table.export()}")
     
     def map_fn(filename):
       audio = tf.io.read_file(filename)
