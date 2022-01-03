@@ -396,9 +396,14 @@ class AudioProvider(DataProvider):
           raise Exception("Need to provide path to save material ID table if using multiple material IDs")
           import sys
           sys.exit(1)
-      
+
+      os.makedirs(self.save_material_path, exist_ok=True)
       with open(os.path.join(self.save_material_path, 'material_id_table.txt'), 'w') as file:
-          file.write(self.material_table.export())
+          keys, values = self.material_table.export()
+          shape = keys.numpy().shape[0]
+          sort_order = tf.argsort(values.numpy())
+          for i in range(shape):
+            file.write(tf.compat.as_str_any(keys.numpy()[sort_order[i]]) + " " + tf.compat.as_str_any(values.numpy()[sort_order[i]]) + "\n")
     
     def map_fn(filename):
       audio = tf.io.read_file(filename)

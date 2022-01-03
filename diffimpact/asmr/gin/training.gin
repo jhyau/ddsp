@@ -5,11 +5,14 @@ train/data.AudioProvider.file_pattern = %TRAIN_FILE_PATTERN
 train/data.AudioProvider.append_material_id = True
 train/data.AudioProvider.n_samples = %N_AUDIO_SAMPLES
 train/data.AudioProvider.audio_sample_rate = %AUDIO_SAMPLE_RATE
+train/data.AudioProvider.save_material_path = %SAVE_DIR
+
 train.validation_provider = @valid/data.AudioProvider()
 valid/data.AudioProvider.file_pattern = %VALIDATION_FILE_PATTERN
 valid/data.AudioProvider.append_material_id = True
 valid/data.AudioProvider.n_samples = %N_AUDIO_SAMPLES
 valid/data.AudioProvider.audio_sample_rate = %AUDIO_SAMPLE_RATE
+valid/data.AudioProvider.save_material_path = %SAVE_DIR
 
 train.trainer = @training.trainers.Trainer()
 Trainer.model = @get_model()
