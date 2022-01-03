@@ -376,7 +376,8 @@ class AudioProvider(DataProvider):
                n_samples=64000,
                audio_sample_rate=16000,
                frame_rate=250,
-               append_material_id=False):
+               append_material_id=False,
+               save_material_path=None):
     self.random_generator = tf.random.Generator.from_seed(1)
 
     self._file_pattern = file_pattern or self.default_file_pattern
@@ -384,11 +385,20 @@ class AudioProvider(DataProvider):
     self._feature_length = int(n_samples / audio_sample_rate * frame_rate)
     super().__init__(audio_sample_rate, frame_rate)
     self.append_material_id = append_material_id
+    self.save_material_path = save_material_path
     if self.append_material_id:
       self.video_table, self.material_table = self.get_tables(self._file_pattern)
       print(f"Size of video table: {self.video_table.size()}, size of material table: {self.material_table.size()}")
       print(f"Material ID table: {self.material_table}")
       print(f"Material ID table values: {self.material_table.export()}")
+      # Write it out to file
+      if not self.save_material_path:
+          raise Exception("Need to provide path to save material ID table if using multiple material IDs")
+          import sys
+          sys.exit(1)
+      
+      with open(os.path.join(self.save_material_path, 'material_id_table.txt'), 'w') as file:
+          file.write(self.material_table.export())
     
     def map_fn(filename):
       audio = tf.io.read_file(filename)

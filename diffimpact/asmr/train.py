@@ -44,6 +44,8 @@ else:
     restore_dir = args.restore_dir
 gin.config.bind_parameter('%TRAIN_FILE_PATTERN', args.train_pattern)
 gin.config.bind_parameter('%VALIDATION_FILE_PATTERN', args.validation_pattern)
+# Bind the save dir as well
+gin.config.bind_parameter('%SAVE_DIR', args.save_dir)
 
 print(gin.config.query_parameter('%TRAIN_FILE_PATTERN'))
 print(f"Loaded gin file... \nThe N_MODAL_FREQUENCIES is : {gin.config.query_parameter('%N_MODAL_FREQUENCIES')} ")
