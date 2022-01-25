@@ -235,6 +235,7 @@ dependencies:
   - zlib=1.2.11=h7b6447c_3
   - zstd=1.4.9=haebb681_0
   - pip:
+    - audio-dspy==0.0.4
     - absl-py==0.12.0
     - bokeh==2.3.3
     - cloudml-hypertune==0.1.0.dev6
