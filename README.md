@@ -18,6 +18,23 @@ interpretable elements to be used as part of an deep learning model, especially
 as the output layers for audio generation.
 
 
+## Running training for DiffImpact
+
+1. Navigate to the `diffimpact/asmr/gin` directory (need to run from here otherwise training won't be able to find the gin files)
+2. Run the asmr/train.py file in the parent directory
+3. When providing the `--train-pattern` and `--validation-pattern` make sure to encapsulate the patterns in quotes ("<pattern>")
+
+Example run:
+
+```
+python /juno/u/jyau/asmr-video-to-sound/ddsp/diffimpact/asmr/train.py --model-type diffimpact --train-pattern "/juno/u/jyau/regnet/data/features/ASMR/orig_asmr_by_material_clips/audio_10s_44100hz_ddsp/1hr/*/train/*.wav" --validation-pattern "/juno/u/jyau/regnet/data/features/ASMR/orig_asmr_by_material_clips/audio_10s_44100hz_ddsp/1hr/*/val/*.wav" --save-dir /juno/u/jyau/asmr-video-to-sound/ddsp/diffimpact/asmr/multiclass-1hr
+```
+
+To resume from a checkpoint:
+
+```
+python /juno/u/jyau/asmr-video-to-sound/ddsp/diffimpact/asmr/train.py --restore-dir <path to the checkpoint> --train-pattern "/juno/u/jyau/regnet/data/features/ASMR/orig_asmr_by_material_clips/audio_10s_44100hz_ddsp/1hr/*/train/*.wav" --validation-pattern "/juno/u/jyau/regnet/data/features/ASMR/orig_asmr_by_material_clips/audio_10s_44100hz_ddsp/1hr/*/val/*.wav" --save-dir <can be same save path or a new one>
+```
 
 
 ## Getting Started
