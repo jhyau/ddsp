@@ -100,6 +100,7 @@ class MfccTimeDistributedRnnEncoder(ZEncoder):
                other_encoders=None,
                tcnn_kernel=7,
                spectral_fn=spectral_ops.compute_mfcc,
+               #spectral_fn=spectral_ops.compute_mfcc_mel_spec,
                mel_bins = 128,
                **kwargs):
     super().__init__(other_encoders=other_encoders, **kwargs)

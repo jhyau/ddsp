@@ -235,7 +235,7 @@ def compute_mfcc(audio,
       overlap=overlap,
       pad_end=pad_end)
   #print("logmel: ", logmel)
-  print("Original MFCC logmel shape: ", logmel.shape)
+  print("Original MFCC logmel shape: ", logmel.shape) # Shape is (1, 1723, 128) --> (1, time dim, mel bins)
   mfccs = tf.signal.mfccs_from_log_mel_spectrograms(logmel)
   print("Original MFCC shape: ", mfccs.shape)
   return mfccs[..., :mfcc_bins]
@@ -267,6 +267,7 @@ def compute_mfcc_mel_spec(mel_spec,
       logmel = safe_log(mel)
   else:
       print("passing in the log mel spectrogram as is...")
+      print("Need to transpose the direct output spectrogram from regnet as it's of the shape: (1, mel bins, time) --> (1, 80, 1720)")
       logmel = mel_spec
 
   print("Mel spec MFCC logmel shape: ", logmel.shape)
