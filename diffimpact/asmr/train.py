@@ -34,6 +34,12 @@ args = parser.parse_args()
 gin.external_configurable(tf.keras.regularizers.L1, module='tf.keras.regularizers')
 if args.model_type:
     gin.add_config_file_search_path('gin/')
+
+    # Adding additional paths
+    gin.add_config_file_search_path('asmr/gin/')
+    gin.add_config_file_search_path('diffimpact/asmr/gin/')
+    gin.add_config_file_search_path('ddsp/diffimpact/asmr/gin/')
+
     gin.parse_config_file('models/%s.gin'%args.model_type)
     gin.parse_config_file('training.gin')
     gin.parse_config_file('asmr.gin')

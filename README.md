@@ -20,8 +20,8 @@ as the output layers for audio generation.
 
 ## Running training for DiffImpact
 
-1. Navigate to the `diffimpact/asmr/gin` directory (need to run from here otherwise training won't be able to find the gin files)
-2. Run the asmr/train.py file in the parent directory
+1. Run the train.py file in `diffimpact/asmr/gin` directory (make sure to run from one of the directories included in the gin file search pattern, like the current main directory, or could also navigate into `diffimpact/asmr/gin` to directly run the train.py file there)
+2. Run the asmr/train.py file (run examples below)
 3. When providing the `--train-pattern` and `--validation-pattern` make sure to encapsulate the patterns in quotes ("<pattern>")
 
 Example run:
