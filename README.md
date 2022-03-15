@@ -36,6 +36,8 @@ To resume from a checkpoint:
 python /juno/u/jyau/asmr-video-to-sound/ddsp/diffimpact/asmr/train.py --restore-dir <path to the checkpoint> --train-pattern "/juno/u/jyau/regnet/data/features/ASMR/orig_asmr_by_material_clips/audio_10s_44100hz_ddsp/1hr/*/train/*.wav" --validation-pattern "/juno/u/jyau/regnet/data/features/ASMR/orig_asmr_by_material_clips/audio_10s_44100hz_ddsp/1hr/*/val/*.wav" --save-dir <can be same save path or a new one>
 ```
 
+Note: The tensorboard logs are saved in `<save_dir>/summaries/train/`.
+
 ## Evaluating for DiffImpact
 
 Currently evaluation is run in Jupyter notebooks. For multiclass DiffImpact evaluation, can use `diffimpact/multiclass-diffimpact-eval.ipynb`, which takes audio as input. If want to pass in mel spectrogram as input, use `diffimpact/mel_spec_diffimpact.ipynb`. TODO: put the logic into a python file to run easier
