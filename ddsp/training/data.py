@@ -379,8 +379,15 @@ class AudioProvider(DataProvider):
                append_material_id=False,
                save_material_path=None):
     self.random_generator = tf.random.Generator.from_seed(1)
-
-    self._file_pattern = file_pattern or self.default_file_pattern
+    
+    # If there are multiple glob patterns
+    if file_pattern.find('|') != -1:
+        print("Multiple file patterns detected")
+        patterns = file_pattern.split('|')
+        self._file_pattern = patterns
+    else:
+        print("One file pattern detected")
+        self._file_pattern = file_pattern or self.default_file_pattern
     self._audio_length = n_samples
     self._feature_length = int(n_samples / audio_sample_rate * frame_rate)
     super().__init__(audio_sample_rate, frame_rate)
@@ -428,8 +435,16 @@ class AudioProvider(DataProvider):
 
   @staticmethod
   def get_tables(file_pattern):
-    file_paths = glob.glob(file_pattern)
-    filenames = [os.path.split(f)[1] for f in file_paths]
+    # If there are multiple patterns to interpret
+    if isinstance(file_pattern, list):
+        filenames = []
+        for pat in file_pattern:
+            file_paths_sub = glob.glob(pat)
+            files = [os.path.split(f)[1] for f in file_paths_sub]
+            filenames.extend(files)
+    else:
+        file_paths = glob.glob(file_pattern)
+        filenames = [os.path.split(f)[1] for f in file_paths]
     video_ids = set([f.split('-')[0] for f in filenames])
     material_ids = set(['-'.join(f.split('-')[:2]) for f in filenames])
     video_keys_tensor = tf.constant(sorted(list(video_ids)), dtype=tf.string)

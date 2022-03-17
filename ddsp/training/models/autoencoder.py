@@ -35,13 +35,20 @@ class Autoencoder(Model):
     self.decoder = decoder
     self.processor_group = processor_group
     self.loss_objs = ddsp.core.make_iterable(losses)
+    print(f"autoencoder preprocessor: {self.preprocessor}")
+    print(f"autoencoder encoder: {self.encoder}")
+    print(f"autoencoder decoder: {self.decoder}")
+    print(f"autoencoder processor group: {self.processor_group}")
+    print(f"autoencoder loss objects: {self.loss_objs}")
 
   def encode(self, features, training=True):
     """Get conditioning by preprocessing then encoding."""
+    print(f"Input features to encoder: {features}")
     if self.preprocessor is not None:
       conditioning = self.preprocessor(features, training=training)
     else:
       conditioning = ddsp.core.copy_if_tf_function(features)
+    print(f"conditioning output of encoder input features: {conditioning}")
     if self.encoder is not None:
       encoder_out = self.encoder(conditioning)
       conditioning.update(encoder_out)
@@ -59,8 +66,10 @@ class Autoencoder(Model):
 
   def call(self, features, training=True):
     """Run the core of the network, get predictions and loss."""
+    print(f"Going through autoencoder call")
     conditioning = self.encode(features, training=training)
     if self.decoder is not None:
+        print("Going through decoder...")
         pg_in = self.decoder(conditioning, training=training)
     else:
         pg_in = conditioning

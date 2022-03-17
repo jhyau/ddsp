@@ -246,29 +246,26 @@ def compute_mfcc_mel_spec(mel_spec,
                  lo_hz=20.0,
                  hi_hz=8000.0,
                  fft_size=1024,
-                 mel_bins=128,
+                 mel_bins=80, # Default was 128
                  mfcc_bins=13,
                  overlap=0.75,
-                 pad_end=True,
-                 undo_waveglow=False):
+                 pad_end=True):
   """Calculate Mel-frequency Cepstral Coefficients."""
-#   logmel = compute_logmel_spec(
-#             mel_spec,
-#             sample_rate=sample_rate)
-  if undo_waveglow:
-      MAX_WAV_VALUE = 32768.0
-      print(f"Undo waveglow division by {MAX_WAV_VALUE}")
-      # Need to take absolute value to deal with the negatives from the waveglow mel specs
-      #logmel = safe_log(tf.abs(mel_spec)) # This will set any value <= 1e-5 to be 1e-5. So negative nums don't work!
-      # Note that waveglow mel specs ARE log mel spectrograms! So don't need to take additional log
+  # The log mel spectrogram needs to be of shape (1, time, mel bins)
+  # Need to take absolute value to deal with the negatives from the waveglow mel specs
+  #logmel = safe_log(tf.abs(mel_spec)) # This will set any value <= 1e-5 to be 1e-5. So negative nums don't work!
+  # Note that waveglow mel specs ARE log mel spectrograms! So don't need to take additional log
+  print("passing in the log mel spectrogram as is...")
+  print("Need to transpose the direct output spectrogram from regnet as it's of the shape: (1, mel bins, time) --> (1, 80, 1720)")
+  
+  # If get regnet output directly
+  if len(mel_spec.shape) < 3:
+      mel_spec = tf.expand_dims(tf.convert_to_tensor(mel_spec), axis=0)
 
-      # Try to multiply in the MAX_WAV_VALUE before taking log again for log mel spec
-      mel = tf.math.exp(mel_spec) * MAX_WAV_VALUE
-      logmel = safe_log(mel)
-  else:
-      print("passing in the log mel spectrogram as is...")
-      print("Need to transpose the direct output spectrogram from regnet as it's of the shape: (1, mel bins, time) --> (1, 80, 1720)")
-      logmel = mel_spec
+  if mel_spec.shape[-1] != mel_bins:
+      mel_spec = tf.transpose(mel_spec, perm=[0,2,1])
+
+  logmel = mel_spec
 
   print("Mel spec MFCC logmel shape: ", logmel.shape)
   print("log mel values: ", logmel)
