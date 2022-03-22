@@ -35,6 +35,7 @@ class ZEncoder(nn.DictLayer):
   def __init__(self, input_keys=None, other_encoders=None, **kwargs):
     """Constructor."""
     input_keys = input_keys or self.get_argument_names('compute_z')
+    print(f"input keys: {input_keys}")
     # TODO(jesseengel): remove dependence on arbitrary key.
     # input_keys.append('f0_scaled')  # Input to get n_timesteps dynamically.
     self.other_encoders = other_encoders
@@ -45,7 +46,7 @@ class ZEncoder(nn.DictLayer):
 
   def call(self, *args, **unused_kwargs):
     """Takes in input tensors and returns a latent tensor z."""
-    print("number of inputs to z encoder: ", len(args))
+    print("inputs to z encoder: ", args)
     print("keyword arguments: ", unused_kwargs)
     time_steps = None
     if 'f0_scaled' in unused_kwargs:
@@ -132,6 +133,9 @@ class MfccTimeDistributedRnnEncoder(ZEncoder):
     self.fft_size = self.z_audio_spec[str(mfcc_time_steps)]['fft_size']
     self.overlap = self.z_audio_spec[str(mfcc_time_steps)]['overlap']
     self.sample_rate = sample_rate
+
+    print(f"input keys to MfccTimeRnnEncoder: {self.input_keys}")
+
     if z_time_steps:
       print('Z time steps: %i'%z_time_steps)
       self.z_time_steps = z_time_steps
@@ -146,11 +150,10 @@ class MfccTimeDistributedRnnEncoder(ZEncoder):
     self.spectral_fn = spectral_fn
     self.mel_bins = mel_bins
 
-  def compute_z(self, audio):
-    print("Computing mfccs and latent z from audio: ", audio.shape)
-    #mfccs = spectral_ops.compute_mfcc(
+  def compute_z(self, mel_spec):
+    print("Computing mfccs and latent z from input audio: ", mel_spec.shape)
     mfccs = self.spectral_fn(
-        audio,
+        mel_spec,
         sample_rate=self.sample_rate,
         lo_hz=4.0,
         hi_hz=16000.0,
