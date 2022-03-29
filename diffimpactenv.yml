@@ -271,3 +271,4 @@ dependencies:
     - tqdm==4.62.0
     - typing-extensions==3.7.4.3
     - wavio==0.0.4
+    - cdpam==0.0.6
