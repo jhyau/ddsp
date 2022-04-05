@@ -24,7 +24,7 @@ MfccTimeDistributedRnnEncoder.spectral_fn = @spectral_ops.compute_mfcc
 
 EmbeddingContextEncoder.input_key = 'material_id'
 EmbeddingContextEncoder.output_key = 'material_embedding'
-EmbeddingContextEncoder.vector_length = 8
+EmbeddingContextEncoder.vector_length = 32 #8
 
 
 # Decoders

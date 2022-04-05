@@ -9,7 +9,7 @@ MfccTimeDistributedRnnEncoder.tcnn_kernel=15
 RnnFcDecoder.output_splits = (('magnitudes', 1),
                               ('stdevs', 1),
                               ('taus', 1))
-RnnFcDecoder.activity_regularizer = None  #@rnn_fc/tf.keras.regularizers.L1()
+RnnFcDecoder.activity_regularizer = @rnn_fc/tf.keras.regularizers.L1()
 rnn_fc/tf.keras.regularizers.L1.l1 = 1e-6
 
 FcDecoder.output_splits = ( ('gains', %N_MODAL_FREQUENCIES),
@@ -20,7 +20,7 @@ FcDecoder.output_splits = ( ('gains', %N_MODAL_FREQUENCIES),
                             ('reverb_gain', 32),
                             ('reverb_decay', 1),
                             ('noise_magnitudes', 100))
-FcDecoder.activity_regularizer = None #@fc/tf.keras.regularizers.L1()
+FcDecoder.activity_regularizer = @fc/tf.keras.regularizers.L1()
 fc/tf.keras.regularizers.L1.l1 = 1e-6
 
 # ==============
