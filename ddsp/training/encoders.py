@@ -150,10 +150,10 @@ class MfccTimeDistributedRnnEncoder(ZEncoder):
     self.spectral_fn = spectral_fn
     self.mel_bins = mel_bins
 
-  def compute_z(self, mel_spec):
-    print("Computing mfccs and latent z from input audio: ", mel_spec.shape)
+  def compute_z(self, audio):
+    print("Computing mfccs and latent z from input audio: ", audio.shape)
     mfccs = self.spectral_fn(
-        mel_spec,
+        audio,
         sample_rate=self.sample_rate,
         lo_hz=4.0,
         hi_hz=16000.0,

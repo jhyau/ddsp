@@ -20,6 +20,7 @@ MfccTimeDistributedRnnEncoder.sample_rate = %AUDIO_SAMPLE_RATE
 MfccTimeDistributedRnnEncoder.z_dims = 16
 MfccTimeDistributedRnnEncoder.rnn_type = 'gru'
 MfccTimeDistributedRnnEncoder.rnn_channels = 512
+MfccTimeDistributedRnnEncoder.spectral_fn = @spectral_ops.compute_mfcc
 
 EmbeddingContextEncoder.input_key = 'material_id'
 EmbeddingContextEncoder.output_key = 'material_embedding'
