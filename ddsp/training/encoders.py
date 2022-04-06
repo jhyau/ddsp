@@ -213,6 +213,7 @@ class EmbeddingContextEncoder(ContextEncoder):
   def call(self, conditioning):
     """Updates conditioning with embedding."""
     conditioning[self.output_key] = self.compute_encoding(conditioning[self.input_key])
+    print(f"shape of EmbeddingContextEncoder output: ", conditioning[self.output_key].shape)
     return conditioning
 
 @gin.register
