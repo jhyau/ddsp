@@ -1,7 +1,11 @@
 import os,sys
+import argparse
 
 checkpoints = os.listdir('./asmr/regnet-labels/')
 output_path = '/juno/u/jyau/regnet/data/features/ASMR/orig_asmr_by_material_clips/modal_responses/'
+
+# Load material ID file from the given Diffimpact checkpoint
+
 
 for ckpt in checkpoints:
     if ckpt.find('3hr') != -1:

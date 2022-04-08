@@ -31,12 +31,24 @@ parser = argparse.ArgumentParser("Generate the gains, frequencies, dampings, and
 parser.add_argument('save_path', type=str, help="Path to the DDSP model's checkpoint directory")
 parser.add_argument('gin_file', type=str, help="Path to the gin file to use")
 parser.add_argument('output_path', type=str, help="Path to save the outputted files")
+parser.add_argument("--num-classes", type=int, help="Number of classes in the multiclass checkpoint")
 args = parser.parse_args()
 print(args)
 
 os.makedirs(args.output_path, exist_ok=True)
-other_path = os.path.join(args.output_path, "ddsp_inference_outputs")
+
+# Save the final differential components used to generate the audio
+other_path = os.path.join(args.output_path, "ddsp_inference_final_outputs")
 os.makedirs(other_path, exist_ok=True)
+
+# Save the force profile components (before Impact module)
+impulse_components_path = os.path.join(args.output_path, "impulse_profile_components")
+os.makedirs(impulse_components_path, exist_ok=True)
+
+# Save the modal response components (before ModalFIR module)
+modal_components_path = os.path.join(args.output_path, "modal_response_components")
+os.makedirs(modal_components_path, exist_ok=True)
+
 
 example_secs = 10
 offset_secs = 0
@@ -72,11 +84,19 @@ train = glob.glob(train_files)
 val = glob.glob(val_files)
 total = train + val
 
+
+# Initialize the modalFIR and Impact modules
+modal_fir = ddsp.synths.ModalFIR(n_samples=int(sample_factor * train_sample_rate), sample_rate=int(sample_factor * train_sample_rate),
+                            initial_bias=-1.5, hz_max=20000.0, freq_scale_fn=ddsp.core.frequencies_critical_bands, freq_scale='mel')
+impact = ddsp.synths.Impact(sample_rate=int(sample_factor * audio_sample_rate), n_samples=int(sample_factor), max_impact_frequency=20, mag_)
+
+
+
 # Load model checkpoint
 model = ddsp.training.models.get_model()
 model.restore(args.save_path)
 
-# Run inference to get the gains, frequencies, dampings from before and after scaling function, and the impact/force profile from each clip
+# Run inference to get the impact/force profile from each clip
 for clip in tqdm(total):
     name = clip.split('/')[-1].split('.')[0]
     print("Inferencing on: ", clip)
@@ -101,6 +121,19 @@ for clip in tqdm(total):
     np.save(os.path.join(other_path, name+"_modal_response.npy"), ir.numpy())
     np.save(os.path.join(other_path, name+"_noise.npy"), noise.numpy())
     np.save(os.path.join(other_path, name+"_reverb.npy"), revc.numpy())
+
+    # Save the magnitudes, stdevs, and taus for impact profile
+    mags = predictions['magnitudes']
+    stdevs = predictions['stdevs']
+    taus = predictions['taus']
+    tau_bias = predictions['tau_bias']
+
+    np.save(os.path.join(impulse_components_path, "_magnitudes.npy"), mags.numpy())
+    np.save(os.path.join(impulse_components_path, "_taus.npy"), taus.numpy())
+    np.save(os.path.join(impulse_components_path, "_stdevs.npy"), stdevs.numpy())
+    np.save(os.path.join(impulse_components_path, "_tau_bias.npy"), tau_bias.numpy()) # Note that this is actually from the modal response pipeline
+    
+    # Save the impact profile without noise
 
     # Extract the raw gains, frequences, and dampings
     gains = prediction['gains']
