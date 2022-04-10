@@ -65,6 +65,8 @@ class ZEncoder(nn.DictLayer):
     if self.other_encoders:
       for i, enc in enumerate(reversed(self.other_encoders)):
         z = self.concat_encoding(enc.compute_encoding(args[-(i+1)]), z)
+
+    print("final z shape: ", z.shape)
     return z
 
   def concat_encoding (self, enc, z):

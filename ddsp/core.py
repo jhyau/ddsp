@@ -495,6 +495,7 @@ def resample(inputs: tf.Tensor,
     ValueError: If method is not one of 'nearest', 'linear', 'cubic', or
       'window'.
   """
+  print("method of resample: ", method)
   inputs = tf_float32(inputs)
   is_1d = len(inputs.shape) == 1
   is_2d = len(inputs.shape) == 2
