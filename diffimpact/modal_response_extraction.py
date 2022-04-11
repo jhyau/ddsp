@@ -33,6 +33,7 @@ parser.add_argument('gin_file', type=str, help="Path to the gin file to use")
 parser.add_argument('output_path', type=str, help="Path to save the outputted files")
 parser.add_argument("--train_pattern", type=str, default=None, help="glob pattern for train files")
 parser.add_argument("--valid_pattern", type=str, default=None, help="glob pattern for valid files")
+parser.add_argument("--modal_only", action="store_true", help="Only run modal response info extraction")
 args = parser.parse_args()
 print(args)
 
@@ -130,6 +131,56 @@ impact = ddsp.synths.Impact(sample_rate=int(sample_factor * train_sample_rate), 
 model = ddsp.training.models.get_model()
 model.restore(args.save_path)
 
+if not os.path.exists(os.path.join(args.save_path, "material_id_table.txt")):
+    sys.exit(0)
+
+
+# Separately save the modal responses for multiclass checkpoint
+print("Saving modal responses...")
+
+with open(os.path.join(args.save_path, "material_id_table.txt"), "r") as file:
+    clip = total[0]
+    name = clip.split('/')[-1].split('.')[0].strip()
+    ckpt = [x for x in args.save_path.split('/') if x][-1]
+    for line in file:
+        video_name, material_id = line.split(' ')
+        material_id = material_id.strip()
+        print(f"Inferencing on: {clip} with material id: {material_id}. Name: {name}")
+        print(f"Saving for ckpt: {ckpt}")
+        audio = tf.io.read_file(clip)
+        decoded_audio, audio_sample_rate = tf.audio.decode_wav(audio, desired_channels=1)
+        decoded_audio = tf.expand_dims(tf.squeeze(decoded_audio[offset_samples:(offset_samples + test_samples)]), axis=0)
+        test_input = tf.data.Dataset.from_tensor_slices({'audio':decoded_audio, 'material_id':[int(material_id)], 'video_id':[0]}).batch(2)
+
+        # Have model checkpoint infer on the audio
+        prediction = model(next(iter(test_input)), training=False)
+
+        # Extract the raw gains, frequences, and dampings
+        gains = prediction['gains']
+        frequencies = prediction['frequencies']
+        dampings = prediction['dampings']
+
+        np.save(os.path.join(modal_components_path, ckpt+f"_gains_raw-material_id-{material_id}.npy"), gains.numpy())
+        np.save(os.path.join(modal_components_path, ckpt+f"_freqs_raw-material_id-{material_id}.npy"), frequencies.numpy())
+        np.save(os.path.join(modal_components_path, ckpt+f"_dampings_raw-material_id-{material_id}.npy"), dampings.numpy())
+
+        # Get the gains, frequencies, and dampings after passing through scaling function
+        control_gains = prediction['modal_fir']['controls']['gains']
+        control_freqs = prediction['modal_fir']['controls']['frequencies']
+        control_dampings = prediction['modal_fir']['controls']['dampings']
+
+        np.save(os.path.join(modal_components_path, ckpt+f"_gains_controls-material_id-{material_id}.npy"), control_gains.numpy())
+        np.save(os.path.join(modal_components_path, ckpt+f"_freqs_controls-material_id-{material_id}.npy"), control_freqs.numpy())
+        np.save(os.path.join(modal_components_path, ckpt+f"_dampings_controls-material_id-{material_id}.npy"), control_dampings.numpy())
+
+        # Saving the modal response output from the model
+        ir = prediction['modal_fir']['signal'] # modal response
+        np.save(os.path.join(modal_components_path, ckpt+f"_modal_response_material_id-{material_id}.npy"), ir.numpy())
+
+if args.modal_only:
+    print(f"Extract modal response only, not continuing for other components...")
+    sys.exit(0)
+
 # Run inference to get the impact/force profile from each clip
 for clip in tqdm(total):
     name = clip.split('/')[-1].split('.')[0]
@@ -162,10 +213,10 @@ for clip in tqdm(total):
     taus = prediction['taus']
     tau_bias = prediction['tau_bias']
 
-    np.save(os.path.join(impulse_components_path, "_magnitudes.npy"), mags.numpy())
-    np.save(os.path.join(impulse_components_path, "_taus.npy"), taus.numpy())
-    np.save(os.path.join(impulse_components_path, "_stdevs.npy"), stdevs.numpy())
-    np.save(os.path.join(impulse_components_path, "_tau_bias.npy"), tau_bias.numpy()) # Note that this is actually from the modal response pipeline
+    np.save(os.path.join(impulse_components_path, name+"_magnitudes.npy"), mags.numpy())
+    np.save(os.path.join(impulse_components_path, name+"_taus.npy"), taus.numpy())
+    np.save(os.path.join(impulse_components_path, name+"_stdevs.npy"), stdevs.numpy())
+    np.save(os.path.join(impulse_components_path, name+"_tau_bias.npy"), tau_bias.numpy()) # Note that this is actually from the modal response pipeline
     
     # Save the impact profile without noise
     impc = impact.get_controls(prediction['magnitudes'], prediction['stdevs'], prediction['taus'], prediction['tau_bias'])
@@ -193,43 +244,4 @@ for clip in tqdm(total):
         np.save(os.path.join(modal_components_path, name+"_freqs_controls.npy"), control_freqs.numpy())
         np.save(os.path.join(modal_components_path, name+"_dampings_controls.npy"), control_dampings.numpy())
 
-
-if not os.path.exists(os.path.join(args.save_path, "material_id_table.txt")):
-    sys.exit(0)
-
-
-# Separately save the modal responses for multiclass checkpoint
-print("Saving modal responses...")
-
-with open(os.path.join(args.save_path, "material_id_table.txt"), "r") as file:
-    for line in file:
-        video_name, material_id = line.split(' ')
-
-        name = total[0].split('/')[-1].split('.')[0]
-        print(f"Inferencing on: {clip} with material id: {material_id}")
-        audio = tf.io.read_file(clip)
-        decoded_audio, audio_sample_rate = tf.audio.decode_wav(audio, desired_channels=1)
-        decoded_audio = tf.expand_dims(tf.squeeze(decoded_audio[offset_samples:(offset_samples + test_samples)]), axis=0)
-        test_input = tf.data.Dataset.from_tensor_slices({'audio':decoded_audio, 'material_id':[int(material_id)], 'video_id':[0]}).batch(2)
-
-        # Have model checkpoint infer on the audio
-        prediction = model(next(iter(test_input)), training=False)
-
-        # Extract the raw gains, frequences, and dampings
-        gains = prediction['gains']
-        frequencies = prediction['frequencies']
-        dampings = prediction['dampings']
-
-        np.save(os.path.join(modal_components_path, name+f"_gains_raw-material_id-{material_id}.npy"), gains.numpy())
-        np.save(os.path.join(modal_components_path, name+f"_freqs_raw-material_id-{material_id}.npy"), frequencies.numpy())
-        np.save(os.path.join(modal_components_path, name+f"_dampings_raw-material_id-{material_id}.npy"), dampings.numpy())
-
-        # Get the gains, frequencies, and dampings after passing through scaling function
-        control_gains = prediction['modal_fir']['controls']['gains']
-        control_freqs = prediction['modal_fir']['controls']['frequencies']
-        control_dampings = prediction['modal_fir']['controls']['dampings']
-
-        np.save(os.path.join(modal_components_path, name+f"_gains_controls-material_id-{material_id}.npy"), control_gains.numpy())
-        np.save(os.path.join(modal_components_path, name+f"_freqs_controls-material_id-{material_id}.npy"), control_freqs.numpy())
-        np.save(os.path.join(modal_components_path, name+f"_dampings_controls-material_id-{material_id}.npy"), control_dampings.numpy())
 
