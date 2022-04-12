@@ -271,7 +271,7 @@ def compute_mfcc_mel_spec(mel_spec,
   print("log mel values: ", logmel)
   mfccs = tf.signal.mfccs_from_log_mel_spectrograms(logmel)
   print("mel spec mfcc shape: ", mfccs.shape)
-  return mfccs[..., :mfcc_bins]
+  return mfccs[..., :mfcc_bins] # equivalent to mfccs[:,:,:mfcc_bins]
 
 
 

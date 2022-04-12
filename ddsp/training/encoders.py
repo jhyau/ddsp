@@ -165,6 +165,7 @@ class MfccTimeDistributedRnnEncoder(ZEncoder):
         overlap=self.overlap,
         pad_end=True)
 
+    print(f"output mfcc shape: {mfccs.shape}")
     # Normalize.
     z = self.z_norm(mfccs[:, :, tf.newaxis, :])[:, :, 0, :]
     # Run an RNN over the latents.
