@@ -511,10 +511,12 @@ def resample(inputs: tf.Tensor,
     """Closure around tf.image.resize."""
     # Image resize needs 4-D input. Add/remove extra axis if not 4-D.
     outputs = inputs[:, :, tf.newaxis, :] if not is_4d else inputs
+    print(f"n_timesteps: {n_timesteps} and outputs shape: {outputs.shape[2]}")
     outputs = tf.compat.v1.image.resize(outputs,
                                         [n_timesteps, outputs.shape[2]],
                                         method=method,
                                         align_corners=not add_endpoint)
+    print("tf resample direct output shape: ", outputs.shape)
     return outputs[:, :, 0, :] if not is_4d else outputs
 
   # Perform resampling.
@@ -530,12 +532,14 @@ def resample(inputs: tf.Tensor,
     raise ValueError('Method ({}) is invalid. Must be one of {}.'.format(
         method, "['nearest', 'linear', 'cubic', 'window']"))
 
+  print("dimensionts from the image resize output: ", outputs.shape)
   # Return outputs to the same dimensionality of the inputs.
   if is_1d:
     outputs = outputs[0, :, 0]
   elif is_2d:
     outputs = outputs[:, :, 0]
 
+  print("final output of resample: ", outputs)
   return outputs
 
 

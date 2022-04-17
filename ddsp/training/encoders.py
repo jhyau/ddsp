@@ -53,7 +53,9 @@ class ZEncoder(nn.DictLayer):
       time_steps = int(unused_kwargs['f0_scaled'].shape[1])
     elif hasattr(self, 'z_time_steps'):
       time_steps = self.z_time_steps
+      print("self.z_time_steps: ", self.z_time_steps)
 
+    print("time_steps")
     # inputs = args[:-1]  # Last input just used for time_steps.
     if self.other_encoders:
       inputs = args[:-len(self.other_encoders)]
@@ -81,6 +83,7 @@ class ZEncoder(nn.DictLayer):
     # Expand time dim of z if necessary.
     z_time_steps = int(z.shape[1])
     if z_time_steps != time_steps:
+      print(f"z_time_steps: {z_time_steps} vs. time_steps: {time_steps}")
       z = ddsp.core.resample(z, time_steps)
     return z
 
@@ -145,6 +148,8 @@ class MfccTimeDistributedRnnEncoder(ZEncoder):
     # Layers.
     self.z_norm = nn.Normalize('instance')
     self.rnn = nn.Rnn(rnn_channels, rnn_type)
+    print("rnn_channels: ", rnn_channels)
+    print("tcnn kernel: ", tcnn_kernel)
     self.tcnn = nn.temporal_cnn(rnn_channels, tcnn_kernel, causal=False)
     self.dense_out = tfkl.Dense(z_dims)
     
@@ -166,14 +171,19 @@ class MfccTimeDistributedRnnEncoder(ZEncoder):
         pad_end=True)
 
     print(f"output mfcc shape: {mfccs.shape}")
+    print(f"mfcc output values: ", mfccs)
     # Normalize.
     z = self.z_norm(mfccs[:, :, tf.newaxis, :])[:, :, 0, :]
+    print("output normalize shape: ", z.shape)
     # Run an RNN over the latents.
     z = self.rnn(z)
+    print("output rnn shape: ", z.shape)
     # Run a tcnn over latents.
     z = self.tcnn(z)
+    print("output tcnn shape: ", z.shape)
     # Bounce down to compressed z dimensions.
     z = self.dense_out(z)
+    print(f"final z output shape:", z.shape)
     return z
 
 class ContextEncoder(tfkl.Layer):

@@ -54,12 +54,17 @@ class RnnFcDecoder(nn.OutputSplitsLayer):
     # Initial processing.
     inputs = [stack(x) for stack, x in zip(self.input_stacks, inputs)]
 
+    print(f"Input after initial processing: ", inputs)
+
     # Run an RNN over the latents.
     x = tf.concat(inputs, axis=-1)
+    print(f"x shape after concat: ", x.shape)
     if self.upsample:
       x = self.upsample(x)
     x = self.rnn(x)
+    print(f"shape after rnn: ", x.shape)
     x = tf.concat(inputs + [x], axis=-1)
+    print("after last concat: ", x.shape)
 
     # Final processing.
     return self.out_stack(x)
