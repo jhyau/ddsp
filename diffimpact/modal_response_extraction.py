@@ -34,6 +34,7 @@ parser.add_argument('output_path', type=str, help="Path to save the outputted fi
 parser.add_argument("--train_pattern", type=str, default=None, help="glob pattern for train files")
 parser.add_argument("--valid_pattern", type=str, default=None, help="glob pattern for valid files")
 parser.add_argument("--modal_only", action="store_true", help="Only run modal response info extraction")
+parser.add_argument("--for_train", action="store_true", help="include label to get outputs per the training parameters")
 args = parser.parse_args()
 print(args)
 
@@ -60,6 +61,7 @@ train_sample_rate = gin.config.query_parameter('%AUDIO_SAMPLE_RATE')
 train_samples = gin.config.query_parameter('%N_AUDIO_SAMPLES')
 
 train_z_steps = gin.config.query_parameter('MfccTimeDistributedRnnEncoder.z_time_steps')
+print(f"Train z steps: ", train_z_steps)
 
 offset_samples = int(offset_secs * train_sample_rate)
 test_samples = int(example_secs * train_sample_rate)
@@ -69,13 +71,19 @@ gin.config.bind_parameter('%N_AUDIO_SAMPLES', test_samples)
 try:
     train_internal_sample_rate = gin.config.query_parameter('%INTERNAL_SAMPLE_RATE')
     test_internal_samples = int(example_secs * train_internal_sample_rate)
-    gin.config.bind_parameter('%INTERNAL_AUDIO_SAMPLES', test_internal_samples)
-    gin.config.bind_parameter('FilteredNoise.initial_bias', gin.config.query_parameter('FilteredNoise.initial_bias') - 1.0)
+    print(f"Train config internal audio samples: ", gin.config.query_parameter('%INTERNAL_AUDIO_SAMPLES'))
+    if not args.for_train:
+        print(f"Test internal samples: ", test_internal_samples)
+        gin.config.bind_parameter('%INTERNAL_AUDIO_SAMPLES', test_internal_samples)
+        gin.config.bind_parameter('FilteredNoise.initial_bias', gin.config.query_parameter('FilteredNoise.initial_bias') - 1.0)
 except ValueError:
     pass
-gin.config.bind_parameter('FilteredNoiseExpDecayReverb.gain_initial_bias', -4)
-gin.config.bind_parameter('FilteredNoiseExpDecayReverb.decay_initial_bias', 4.0)
-gin.config.bind_parameter('MfccTimeDistributedRnnEncoder.z_time_steps', test_z_steps)
+
+if not args.for_train:
+    gin.config.bind_parameter('FilteredNoiseExpDecayReverb.gain_initial_bias', -4)
+    gin.config.bind_parameter('FilteredNoiseExpDecayReverb.decay_initial_bias', 4.0)
+    print(f"test z steps: ", test_z_steps)
+    gin.config.bind_parameter('MfccTimeDistributedRnnEncoder.z_time_steps', test_z_steps)
 
 # Get the trainig and validation files
 if args.train_pattern is None:

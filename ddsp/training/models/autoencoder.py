@@ -70,12 +70,12 @@ class Autoencoder(Model):
     conditioning = self.encode(features, training=training)
     if self.decoder is not None:
         print("Going through decoder...")
-        print("Input to decoder: ", conditioning)
+        #print("Input to decoder: ", conditioning)
         pg_in = self.decoder(conditioning, training=training)
     else:
         pg_in = conditioning
     pg_in.update(conditioning)
-    print("shape after decoder: ", pg_in)
+    #print("after decoder: ", pg_in)
     print("Input to processor group: ", pg_in.keys())
     outputs = self.processor_group.get_controls(pg_in)
     outputs['audio_synth'] = self.processor_group.get_signal(outputs)
