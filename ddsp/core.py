@@ -539,7 +539,6 @@ def resample(inputs: tf.Tensor,
   elif is_2d:
     outputs = outputs[:, :, 0]
 
-  print("final output of resample: ", outputs)
   return outputs
 
 

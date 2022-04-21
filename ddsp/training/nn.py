@@ -212,7 +212,6 @@ def normalize_op(x, norm_type='layer', eps=1e-5):
     x = tf.reshape(x, [mb, h, w, n_groups, ch // n_groups])
     print(f"reshaped size: ", x.shape)
     mean, var = tf.nn.moments(x, [1, 2, 4], keepdims=True)
-    print(var)
     x = (x - mean) / tf.sqrt(var + eps)
     x = tf.reshape(x, [mb, h, w, ch])
   return x
