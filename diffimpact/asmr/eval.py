@@ -24,19 +24,19 @@ logging.set_verbosity(logging.INFO)
 
 gin.external_configurable(tf.keras.regularizers.L1, module='tf.keras.regularizers')
 
-# Eval with saved tensors
-def generate_audio_testing(raw_gain, raw_freq, raw_dampings, modal_fir, reverb, impulse_profile,
-                           gains, frequencies, dampings, modal_response,
-                           noise, acceleration_scale, revc, audio_sample_rate, example_secs, scratch='controls'):
+# Eval with saved impact profile tensors
+def generate_audio_testing_impact(prediction, modal_fir, reverb, impulse_profile, modal_response,
+                           noise, acceleration_scale, revc, audio_sample_rate, example_secs, scratch='raw'):
     """Generate DiffImpact's estimate of impact sound based on current model variables."""
     # Generate impulse --> impact profile
     # magnitude_envelopes, taus, prediction['stdevs']
-#     impc = impact.get_controls(mags, stdevs, taus, 0) # needs to be 2D?
-#     impulse_profile = impact.get_signal(impc['magnitudes'], impc['taus'])
+
+    # Get force profile from saved tensors
+    if scratch == "raw":
+        impc = impact.get_controls(mags, stdevs, taus, 0) # needs to be 2D?
+        impulse_profile = impact.get_signal(impc['magnitudes'], impc['taus'])
+        
     print("impulse profile shape: ", impulse_profile.shape) # force profile
-    zero_freq = np.zeros_like(raw_freq)
-    zero_gain = np.random.rand(1,256) #np.zeros_like(raw_gain)
-    zero_damp = np.zeros_like(raw_dampings)
 
     # Get modal response from raw freqs, gains, and dampings
     irc_scratch = modal_fir.get_controls(raw_gain, raw_freq, raw_dampings)
@@ -49,12 +49,12 @@ def generate_audio_testing(raw_gain, raw_freq, raw_dampings, modal_fir, reverb, 
     print("model's output modal response: ", modal_response)
     #print("ir_scratch: ", ir_scratch)
     # Convolve together for modal vibration sounds
-    if scratch == 'raw':
-        audio = ddsp.core.fft_convolve(impulse_profile, ir_scratch)
-    elif scratch == 'controls' or scratch =='control':
-        audio = ddsp.core.fft_convolve(impulse_profile, ir)
-    else:
-        audio = ddsp.core.fft_convolve(impulse_profile, modal_response)
+    #if scratch == 'raw':
+    #    audio = ddsp.core.fft_convolve(impulse_profile, ir_scratch)
+    #elif scratch == 'controls' or scratch =='control':
+    #    audio = ddsp.core.fft_convolve(impulse_profile, ir)
+    #else:
+    audio = ddsp.core.fft_convolve(impulse_profile, modal_response) #Using modal response directly from Diffimpact's output
     print("convolved shape: ", audio.shape)
 
     # Generate and add time constant noise
