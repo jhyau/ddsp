@@ -31,6 +31,8 @@ parser = argparse.ArgumentParser("Generate the gains, frequencies, dampings, and
 parser.add_argument('save_path', type=str, help="Path to the DDSP model's checkpoint directory")
 parser.add_argument('gin_file', type=str, help="Path to the gin file to use")
 parser.add_argument('output_path', type=str, help="Path to save the outputted files")
+parser.add_argument('video_title', type=str, help="video name (without .mp4)")
+parser.add_argument('')
 parser.add_argument("--train_pattern", type=str, default=None, help="glob pattern for train files")
 parser.add_argument("--valid_pattern", type=str, default=None, help="glob pattern for valid files")
 parser.add_argument("--modal_only", action="store_true", help="Only run modal response info extraction")

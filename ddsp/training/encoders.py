@@ -46,7 +46,7 @@ class ZEncoder(nn.DictLayer):
 
   def call(self, *args, **unused_kwargs):
     """Takes in input tensors and returns a latent tensor z."""
-    print("inputs to z encoder: ", args)
+    #print("inputs to z encoder: ", args)
     print("keyword arguments: ", unused_kwargs)
     time_steps = None
     if 'f0_scaled' in unused_kwargs:
