@@ -17,6 +17,10 @@ import gin
 import gin.tf
 import gin.tf.external_configurables
 
+args = 
+parser.add_argument('video_title', type=str, help="video name (without .mp4)")
+parser.add_argument('')
+
 #import wandb
 #resume = False
 #wandb_id = 'placeholder'
