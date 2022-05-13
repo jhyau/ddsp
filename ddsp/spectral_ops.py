@@ -135,6 +135,18 @@ def compute_logmag(audio, size=2048, overlap=0.75, pad_end=True):
 def compute_logmag_mel_spec(mel_spec, size=2048, overlap=0.75, pad_end=True):
   return safe_log(compute_mag_mel_spec(mel_spec, size, overlap, pad_end))
 
+@gin.register
+def compute_waveglow_logmel(audio,
+                   sample_rate=16000,
+                   lo_hz=80.0,
+                   hi_hz=7600.0,
+                   bins=64,
+                   fft_size=2048,
+                   overlap=0.75,
+                   pad_end=True,
+                   mel_samples=None):
+    print("Computing logmel waveglow style...")
+
 
 @gin.register
 def compute_logmel(audio,
@@ -155,39 +167,6 @@ def compute_logmel(audio,
   print("final mel shape in compute_logmel: ", mel.shape)
   return safe_log(mel)
 
-
-@gin.register
-def compute_logmel_resnet(audio,
-                   sample_rate=44100,
-                   lo_hz=0.0,
-                   hi_hz=16000.0,
-                   bins=80,
-                   fft_size=1024,
-                   overlap=0.75,
-                   pad_end=True,
-                   mel_samples=1720):
-  mel = compute_mel(audio, sample_rate, lo_hz, hi_hz, bins, fft_size, overlap, pad_end)
-  print("mel shape in compute_logmel: ", mel.shape)
-  # Make sure it matches the mel_sample shape
-  if mel_samples is not None:
-      mel = mel[:, :mel_samples, :]
-  print("final mel shape in compute_logmel: ", mel.shape)
-  return safe_log(mel)
-
-
-@gin.register
-def compute_logmel_spec(mel_spec,
-                        sample_rate=44100,
-                        lo_hz=0.0,
-                        hi_hz=16000.0,
-                        bins=80,
-                        fft_size=1024,
-                        overlap=0.75,
-                        pad_end=True):
-    #mel = compute_mel_spec_process(mel_spec, sample_rate, lo_hz, hi_hz, bins, fft_size, overlap, pad_end)
-    print("mel as is: ", mel_spec)
-    # Input waveglow mel spectrograms ARE log mel spectrograms
-    return mel_spec #safe_log(mel)
 
 @gin.register
 def compute_mel_spec_process(mel_spec,
