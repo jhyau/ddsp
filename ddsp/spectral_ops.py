@@ -23,11 +23,15 @@ import librosa
 import numpy as np
 import tensorflow.compat.v2 as tf
 
+from librosa.filters import mel as librosa_mel_fn
+
 CREPE_SAMPLE_RATE = 16000
 _CREPE_FRAME_SIZE = 1024
 
 F0_RANGE = 127.0  # MIDI
 LD_RANGE = 120.0  # dB
+
+MAX_WAV_VALUE = 32768.0 # Waveglow mel spectrogram computation
 
 
 def stft(audio, frame_size=2048, overlap=0.75, pad_end=True):
@@ -135,6 +139,87 @@ def compute_logmag(audio, size=2048, overlap=0.75, pad_end=True):
 def compute_logmag_mel_spec(mel_spec, size=2048, overlap=0.75, pad_end=True):
   return safe_log(compute_mag_mel_spec(mel_spec, size, overlap, pad_end))
 
+
+
+class TacotronSTFT(tf.keras.layers.Layer):
+    def __init__(self, filter_length=1024, hop_length=256, win_length=1024,
+                 n_mel_channels=80, sampling_rate=22050, mel_fmin=0.0,
+                 mel_fmax=8000.0):
+        super(TacotronSTFT, self).__init__()
+        self.n_mel_channels = n_mel_channels
+        self.sampling_rate = sampling_rate
+        self.stft_fn = STFT(filter_length, hop_length, win_length)
+        mel_basis = librosa_mel_fn(
+            sampling_rate, filter_length, n_mel_channels, mel_fmin, mel_fmax)
+        mel_basis = torch.from_numpy(mel_basis).float()
+        self.register_buffer('mel_basis', mel_basis)
+
+    def spectral_normalize(self, magnitudes, C=1, clip_val=1e-5):
+        """
+        PARAMS
+        ------
+        C: compression factor
+        """
+        return torch.log(tf.clip_by_value(magnitudes, clip_val, np.inf) * C)
+        #return torch.log(torch.clamp(magnitudes, min=clip_val) * C)
+
+    def spectral_de_normalize(self, magnitudes, C=1):
+        """
+        PARAMS
+        ------
+        C: compression factor used to compress
+        """
+        return tf.math.exp(x) / C
+
+    def mel_spectrogram(self, y):
+        """Computes mel-spectrograms from a batch of waves
+        PARAMS
+        ------
+        y: Variable(torch.FloatTensor) with shape (B, T) in range [-1, 1]
+        RETURNS
+        -------
+        mel_output: torch.FloatTensor of shape (B, n_mel_channels, T)
+        """
+        assert(torch.min(y.data) >= -1)
+        assert(torch.max(y.data) <= 1)
+
+        magnitudes, phases = self.stft_fn.transform(y)
+        magnitudes = magnitudes.data
+        mel_output = torch.matmul(self.mel_basis, magnitudes)
+        mel_output = self.spectral_normalize(mel_output)
+        return mel_output
+
+    def transform(self, input_data):
+        num_batches = input_data.size(0)
+        num_samples = input_data.size(1)
+
+        self.num_samples = num_samples
+
+        # similar to librosa, reflect-pad the input
+        input_data = input_data.view(num_batches, 1, num_samples)
+        input_data = tf.pad(
+            tf.expand_dims(input_data, 1),
+            (int(self.filter_length / 2), int(self.filter_length / 2), 0, 0),
+            mode='REFLECT')
+        input_data = tf.squeeze(input_data, 1)
+
+        forward_transform = F.conv1d(
+            input_data,
+            Variable(self.forward_basis, requires_grad=False),
+            stride=self.hop_length,
+            padding=0)
+
+        cutoff = int((self.filter_length / 2) + 1)
+        real_part = forward_transform[:, :cutoff, :]
+        imag_part = forward_transform[:, cutoff:, :]
+
+        magnitude = torch.sqrt(real_part**2 + imag_part**2)
+        phase = torch.autograd.Variable(
+            torch.atan2(imag_part.data, real_part.data))
+
+        return magnitude, phase
+
+
 @gin.register
 def compute_waveglow_logmel(audio,
                    sample_rate=16000,
@@ -146,6 +231,12 @@ def compute_waveglow_logmel(audio,
                    pad_end=True,
                    mel_samples=None):
     print("Computing logmel waveglow style...")
+    audio_norm = audio / MAX_WAV_VALUE
+    audio_norm = tf.expand_dims(audio_norm, 0)
+    stft_fn = TacotronSTFT(filter_length=args.filter_length, hop_length=args.hop_length, win_length=args.win_length, sampling_rate=args.sampling_rate, mel_fmin=args.fmin, mel_fmax=args.fmax)
+    melspec = stft_fn.mel_spectrogram(audio_norm)
+    melspec = tf.squeeze(melspec, 0)
+    return melspec
 
 
 @gin.register
