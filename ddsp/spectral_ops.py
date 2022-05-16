@@ -196,16 +196,37 @@ class TacotronSTFT(tf.keras.layers.Layer):
         self.num_samples = num_samples
 
         # similar to librosa, reflect-pad the input
-        input_data = input_data.view(num_batches, 1, num_samples)
+        input_data = input_data.reshape(num_batches, 1, num_samples)
+        padding = tf.constant([[int(self.filter_length / 2), int(self.filter_length / 2)], [0, 0]])
         input_data = tf.pad(
             tf.expand_dims(input_data, 1),
-            (int(self.filter_length / 2), int(self.filter_length / 2), 0, 0),
+            padding,
+            #(int(self.filter_length / 2), int(self.filter_length / 2), 0, 0),
             mode='REFLECT')
         input_data = tf.squeeze(input_data, 1)
 
-        forward_transform = F.conv1d(
+        # forward_basis
+        fourier_basis = np.fft.fft(np.eye(self.filter_length))
+
+        cutoff = int((self.filter_length / 2 + 1))
+        fourier_basis = np.vstack([np.real(fourier_basis[:cutoff, :]),
+                                   np.imag(fourier_basis[:cutoff, :])])
+
+        forward_basis = torch.FloatTensor(fourier_basis[:, None, :])
+
+        assert(filter_length >= win_length)
+        # get window and zero center pad it to filter_length
+            fft_window = get_window(window, win_length, fftbins=True)
+            fft_window = pad_center(fft_window, filter_length)
+            fft_window = torch.from_numpy(fft_window).float()
+
+            # window the bases
+            forward_basis *= fft_window
+
+        # stft transform
+        forward_transform = tf.nn.conv1d(
             input_data,
-            Variable(self.forward_basis, requires_grad=False),
+            self.forward_basis,
             stride=self.hop_length,
             padding=0)
 
@@ -213,9 +234,8 @@ class TacotronSTFT(tf.keras.layers.Layer):
         real_part = forward_transform[:, :cutoff, :]
         imag_part = forward_transform[:, cutoff:, :]
 
-        magnitude = torch.sqrt(real_part**2 + imag_part**2)
-        phase = torch.autograd.Variable(
-            torch.atan2(imag_part.data, real_part.data))
+        magnitude = tf.math.sqrt(real_part**2 + imag_part**2)
+        phase = tf.math.atan2(imag_part.data, real_part.data)
 
         return magnitude, phase
 
