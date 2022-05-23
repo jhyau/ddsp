@@ -24,6 +24,8 @@ import numpy as np
 import tensorflow.compat.v2 as tf
 
 from librosa.filters import mel as librosa_mel_fn
+from scipy.signal import get_window
+from librosa.util import pad_center
 
 CREPE_SAMPLE_RATE = 16000
 _CREPE_FRAME_SIZE = 1024
@@ -212,13 +214,13 @@ class TacotronSTFT(tf.keras.layers.Layer):
         fourier_basis = np.vstack([np.real(fourier_basis[:cutoff, :]),
                                    np.imag(fourier_basis[:cutoff, :])])
 
-        forward_basis = torch.FloatTensor(fourier_basis[:, None, :])
+        forward_basis = tf.convert_to_tensor(fourier_basis[:, None, :])
 
         assert(filter_length >= win_length)
         # get window and zero center pad it to filter_length
         fft_window = get_window(window, win_length, fftbins=True)
         fft_window = pad_center(fft_window, filter_length)
-        fft_window = torch.from_numpy(fft_window).float()
+        fft_window = tf.convert_to_tensor(fft_window, dtype=tf.float32)
 
         # window the bases
         forward_basis *= fft_window
