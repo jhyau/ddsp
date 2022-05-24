@@ -150,11 +150,14 @@ class TacotronSTFT(tf.keras.layers.Layer):
         super(TacotronSTFT, self).__init__()
         self.n_mel_channels = n_mel_channels
         self.sampling_rate = sampling_rate
-        self.stft_fn = STFT(filter_length, hop_length, win_length)
+        self.filter_length = filter_length
+        self.hop_length = hop_length
+        self.win_length = win_length
+        #self.stft_fn = STFT(filter_length, hop_length, win_length)
         mel_basis = librosa_mel_fn(
             sampling_rate, filter_length, n_mel_channels, mel_fmin, mel_fmax)
-        mel_basis = torch.from_numpy(mel_basis).float()
-        self.register_buffer('mel_basis', mel_basis)
+        mel_basis = tf.convert_to_tensor(mel_basis, dtype=tf.float32)
+        #self.register_buffer('mel_basis', mel_basis)
 
     def spectral_normalize(self, magnitudes, C=1, clip_val=1e-5):
         """
@@ -182,23 +185,23 @@ class TacotronSTFT(tf.keras.layers.Layer):
         -------
         mel_output: torch.FloatTensor of shape (B, n_mel_channels, T)
         """
-        assert(torch.min(y.data) >= -1)
-        assert(torch.max(y.data) <= 1)
+        assert(tf.math.reduce_min(y) >= -1)
+        assert(tf.math.reduce_max(y) <= 1)
 
-        magnitudes, phases = self.stft_fn.transform(y)
-        magnitudes = magnitudes.data
-        mel_output = torch.matmul(self.mel_basis, magnitudes)
+        magnitudes, phases = self.transform(y)
+        magnitudes = magnitudes
+        mel_output = tf.linalg.matmul(self.mel_basis, magnitudes) #torch.matmul(self.mel_basis, magnitudes)
         mel_output = self.spectral_normalize(mel_output)
         return mel_output
 
     def transform(self, input_data):
-        num_batches = input_data.size(0)
-        num_samples = input_data.size(1)
+        num_batches = input_data.shape[0]
+        num_samples = input_data.shape[1]
 
         self.num_samples = num_samples
 
         # similar to librosa, reflect-pad the input
-        input_data = input_data.reshape(num_batches, 1, num_samples)
+        input_data = tf.reshape(input_data, [num_batches, 1, num_samples])
         padding = tf.constant([[int(self.filter_length / 2), int(self.filter_length / 2)], [0, 0]])
         input_data = tf.pad(
             tf.expand_dims(input_data, 1),
@@ -251,13 +254,18 @@ def compute_waveglow_logmel(audio,
                    fft_size=2048,
                    overlap=0.75,
                    pad_end=True,
-                   mel_samples=None):
+                   mel_samples=1720,
+                   filter_length=1024,
+                   hop_length=256,
+                   win_length=1024):
     print("Computing logmel waveglow style...")
     audio_norm = audio / MAX_WAV_VALUE
     audio_norm = tf.expand_dims(audio_norm, 0)
-    stft_fn = TacotronSTFT(filter_length=args.filter_length, hop_length=args.hop_length, win_length=args.win_length, sampling_rate=args.sampling_rate, mel_fmin=args.fmin, mel_fmax=args.fmax)
+    stft_fn = TacotronSTFT(filter_length=filter_length, hop_length=hop_length, win_length=win_length, sampling_rate=sample_rate, mel_fmin=lo_hz, mel_fmax=hi_hz)
     melspec = stft_fn.mel_spectrogram(audio_norm)
     melspec = tf.squeeze(melspec, 0)
+    if mel_samples is not None:
+        melspec = melspec[:, :mel_samples]
     return melspec
 
 
