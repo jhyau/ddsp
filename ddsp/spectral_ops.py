@@ -194,7 +194,7 @@ class TacotronSTFT(tf.keras.layers.Layer):
         mel_output = self.spectral_normalize(mel_output)
         return mel_output
 
-    def transform(self, input_data):
+    def transform(self, input_data, window="hann"):
         num_batches = input_data.shape[0]
         num_samples = input_data.shape[1]
 
@@ -202,7 +202,8 @@ class TacotronSTFT(tf.keras.layers.Layer):
 
         # similar to librosa, reflect-pad the input
         input_data = tf.reshape(input_data, [num_batches, 1, num_samples])
-        padding = tf.constant([[int(self.filter_length / 2), int(self.filter_length / 2)], [0, 0]])
+        padding = tf.constant([[0, 0], [0, 0], [0, 0], [int(self.filter_length / 2), int(self.filter_length / 2)]])
+        print(input_data.shape)
         input_data = tf.pad(
             tf.expand_dims(input_data, 1),
             padding,
@@ -219,10 +220,10 @@ class TacotronSTFT(tf.keras.layers.Layer):
 
         forward_basis = tf.convert_to_tensor(fourier_basis[:, None, :])
 
-        assert(filter_length >= win_length)
+        assert(self.filter_length >= self.win_length)
         # get window and zero center pad it to filter_length
-        fft_window = get_window(window, win_length, fftbins=True)
-        fft_window = pad_center(fft_window, filter_length)
+        fft_window = get_window(window, self.win_length, fftbins=True)
+        fft_window = pad_center(fft_window, self.filter_length)
         fft_window = tf.convert_to_tensor(fft_window, dtype=tf.float32)
 
         # window the bases
@@ -240,7 +241,7 @@ class TacotronSTFT(tf.keras.layers.Layer):
         imag_part = forward_transform[:, cutoff:, :]
 
         magnitude = tf.math.sqrt(real_part**2 + imag_part**2)
-        phase = tf.math.atan2(imag_part.data, real_part.data)
+        phase = tf.math.atan2(imag_part, real_part)
 
         return magnitude, phase
 
