@@ -218,7 +218,7 @@ class TacotronSTFT(tf.keras.layers.Layer):
         fourier_basis = np.vstack([np.real(fourier_basis[:cutoff, :]),
                                    np.imag(fourier_basis[:cutoff, :])])
 
-        forward_basis = tf.convert_to_tensor(fourier_basis[:, None, :])
+        forward_basis = tf.convert_to_tensor(fourier_basis[:, None, :], dtype=tf.float32)
 
         assert(self.filter_length >= self.win_length)
         # get window and zero center pad it to filter_length
@@ -229,12 +229,14 @@ class TacotronSTFT(tf.keras.layers.Layer):
         # window the bases
         forward_basis *= fft_window
 
-        # stft transform
+        print("size of data: ", input_data.shape)
+        print("size of fft window: ", fft_window.shape)
+        # stft transform, no padding
         forward_transform = tf.nn.conv1d(
             input_data,
-            self.forward_basis,
-            stride=self.hop_length,
-            padding=0)
+            forward_basis,
+            self.hop_length,
+            "VALID")
 
         cutoff = int((self.filter_length / 2) + 1)
         real_part = forward_transform[:, :cutoff, :]
