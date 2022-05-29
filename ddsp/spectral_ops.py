@@ -156,7 +156,7 @@ class TacotronSTFT(tf.keras.layers.Layer):
         #self.stft_fn = STFT(filter_length, hop_length, win_length)
         mel_basis = librosa_mel_fn(
             sampling_rate, filter_length, n_mel_channels, mel_fmin, mel_fmax)
-        mel_basis = tf.convert_to_tensor(mel_basis, dtype=tf.float32)
+        self.mel_basis = tf.convert_to_tensor(mel_basis, dtype=tf.float32)
         #self.register_buffer('mel_basis', mel_basis)
 
     def spectral_normalize(self, magnitudes, C=1, clip_val=1e-5):
@@ -165,7 +165,7 @@ class TacotronSTFT(tf.keras.layers.Layer):
         ------
         C: compression factor
         """
-        return torch.log(tf.clip_by_value(magnitudes, clip_val, np.inf) * C)
+        return tf.math.log(tf.clip_by_value(magnitudes, clip_val, tf.float32.max) * C)
         #return torch.log(torch.clamp(magnitudes, min=clip_val) * C)
 
     def spectral_de_normalize(self, magnitudes, C=1):
@@ -233,20 +233,34 @@ class TacotronSTFT(tf.keras.layers.Layer):
         print("size of forward basis: ", forward_basis.shape)
         # stft transform, no padding
         # default data_format="NWC", where input is (batch size, in width, in channels)
-        # From waveglow/pytorch, the data format is (batch size, in channels, L) --> so need to reshape
+        # From waveglow/pytorch, the data format is (batch size, in channels, L) or (batch, in channels, iW) --> so need to reshape
         input_data = tf.reshape(input_data, [input_data.shape[0], input_data.shape[2], input_data.shape[1]])
+
+        # For pytorch, weight/filter shape is (out channels, in channels/groups, kW)
+        # For tf, filter needs to be shape (filter width, in channels, out channels)
+        forward_basis = tf.reshape(forward_basis, [forward_basis.shape[2], forward_basis.shape[1], forward_basis.shape[0]])
         print("size of data: ", input_data.shape)
+        print("size of forward basis: ", forward_basis.shape)
 
         forward_transform = tf.nn.conv1d(
             input_data,
             forward_basis,
             self.hop_length,
             "VALID",
-            data_format="NWC")
+            data_format="NWC",
+            dilations=1)
 
+        print("forward transform shape: ", forward_transform.shape)
+
+        # tf conv1d output shape is (batch, out width, out channels). in pytorch, conv1d output is (batch size, out channel, L out)
+        forward_transform = tf.reshape(forward_transform, [forward_transform.shape[0], forward_transform.shape[2], forward_transform.shape[1]])
         cutoff = int((self.filter_length / 2) + 1)
         real_part = forward_transform[:, :cutoff, :]
         imag_part = forward_transform[:, cutoff:, :]
+
+        print("cutoff: ", cutoff)
+        print("real part: ", real_part.shape)
+        print("imag part: ", imag_part.shape)
 
         magnitude = tf.math.sqrt(real_part**2 + imag_part**2)
         phase = tf.math.atan2(imag_part, real_part)
