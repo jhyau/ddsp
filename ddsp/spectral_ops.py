@@ -230,13 +230,19 @@ class TacotronSTFT(tf.keras.layers.Layer):
         forward_basis *= fft_window
 
         print("size of data: ", input_data.shape)
-        print("size of fft window: ", fft_window.shape)
+        print("size of forward basis: ", forward_basis.shape)
         # stft transform, no padding
+        # default data_format="NWC", where input is (batch size, in width, in channels)
+        # From waveglow/pytorch, the data format is (batch size, in channels, L) --> so need to reshape
+        input_data = tf.reshape(input_data, [input_data.shape[0], input_data.shape[2], input_data.shape[1]])
+        print("size of data: ", input_data.shape)
+
         forward_transform = tf.nn.conv1d(
             input_data,
             forward_basis,
             self.hop_length,
-            "VALID")
+            "VALID",
+            data_format="NWC")
 
         cutoff = int((self.filter_length / 2) + 1)
         real_part = forward_transform[:, :cutoff, :]
