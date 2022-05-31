@@ -185,14 +185,14 @@ class TacotronSTFT(tf.keras.layers.Layer):
         -------
         mel_output: torch.FloatTensor of shape (B, n_mel_channels, T)
         """
-        assert(tf.math.reduce_min(y) >= -1)
-        assert(tf.math.reduce_max(y) <= 1)
+        #assert(tf.math.greater_equal(tf.math.reduce_min(y), -1))
+        #assert(tf.math.less_equal(tf.math.reduce_max(y), 1))
+        #assert(tf.math.reduce_min(y) >= -1)
+        #assert(tf.math.reduce_max(y) <= 1)
 
         magnitudes, phases = self.transform(y)
-        #print("magnitudes: ", magnitudes)
         mel_output = tf.linalg.matmul(self.mel_basis, magnitudes) #torch.matmul(self.mel_basis, magnitudes)
 
-        #print("mel output after matmul: ", mel_output)
         mel_output = self.spectral_normalize(mel_output)
         return mel_output
 
@@ -201,7 +201,7 @@ class TacotronSTFT(tf.keras.layers.Layer):
         num_samples = input_data.shape[1]
 
         self.num_samples = num_samples
-
+        print(f"num batches: {num_batches} and num samples: {num_samples}")
         # similar to librosa, reflect-pad the input
         input_data = tf.reshape(input_data, [num_batches, 1, num_samples])
         padding = tf.constant([[0, 0], [0, 0], [0, 0], [int(self.filter_length / 2), int(self.filter_length / 2)]])
@@ -209,12 +209,10 @@ class TacotronSTFT(tf.keras.layers.Layer):
         input_data = tf.pad(
             tf.expand_dims(input_data, 1),
             padding,
-            #(int(self.filter_length / 2), int(self.filter_length / 2), 0, 0),
             mode='REFLECT')
         input_data = tf.squeeze(input_data, 1)
         
         print("input data shape: ", input_data.shape)
-        #print("input data after padding: \n", input_data)
         # forward_basis
         fourier_basis = np.fft.fft(np.eye(self.filter_length))
 
@@ -232,10 +230,7 @@ class TacotronSTFT(tf.keras.layers.Layer):
 
         # window the bases
         forward_basis *= fft_window
-        #print("forward basis: \n", forward_basis)
 
-        print("size of data: ", input_data.shape)
-        print("size of forward basis: ", forward_basis.shape)
         # stft transform, no padding
         # default data_format="NWC", where input is (batch size, in width, in channels)
         # From waveglow/pytorch, the data format is (batch size, in channels, L) or (batch, in channels, iW) --> so need to reshape
@@ -262,15 +257,14 @@ class TacotronSTFT(tf.keras.layers.Layer):
         #forward_transform = tf.reshape(forward_transform, [forward_transform.shape[0], forward_transform.shape[2], forward_transform.shape[1]])
         forward_transform = tf.transpose(forward_transform, perm=[0, 2, 1])
         print("forward transform shape after reshaping: ", forward_transform.shape)
-        print(forward_transform)
 
         cutoff = int((self.filter_length / 2) + 1)
         real_part = forward_transform[:, :cutoff, :]
         imag_part = forward_transform[:, cutoff:, :]
 
-        print("cutoff: ", cutoff)
-        print("real part: ", real_part.shape)
-        print("imag part: ", imag_part.shape)
+        #print("cutoff: ", cutoff)
+        #print("real part: ", real_part.shape)
+        #print("imag part: ", imag_part.shape)
 
         magnitude = tf.math.sqrt(real_part**2 + imag_part**2)
         phase = tf.math.atan2(imag_part, real_part)
@@ -294,13 +288,28 @@ def compute_waveglow_logmel(audio,
     print("Computing logmel waveglow style...")
     # This normalization is already done by tensorflow's decode audio function
     #audio_norm = audio / MAX_WAV_VALUE
-    audio_norm = tf.expand_dims(audio, 0)
 
+    # If only 1 dimension, add batch size dim at dim 0
+    if len(audio.shape) == 1:
+        audio_norm = tf.expand_dims(audio, 0)
+    else: # No extra dimension needs to be added
+        audio_norm = audio 
+    print("Input audio size after adding a dimension if needed: ", audio_norm.shape)
+
+    # Initialize the STFT function and create mel spectrogram
     stft_fn = TacotronSTFT(filter_length=filter_length, hop_length=hop_length, win_length=win_length, sampling_rate=sample_rate, mel_fmin=lo_hz, mel_fmax=hi_hz)
     melspec = stft_fn.mel_spectrogram(audio_norm)
-    melspec = tf.squeeze(melspec, 0)
+
+    # Squeeze if batch size is 1
+    if melspec.shape[0] == 1:
+        melspec = tf.squeeze(melspec, 0)
+
     if mel_samples is not None:
-        melspec = melspec[:, :mel_samples]
+        if len(melspec.shape) >= 3:
+            melspec = melspec[:, :, :mel_samples]
+        else:
+            melspec = melspec[:, :mel_samples]
+        #melspec = melspec[:, : ,:mel_samples]
     return melspec
 
 
@@ -356,6 +365,7 @@ def compute_mfcc(audio,
                  hi_hz=8000.0,
                  fft_size=1024,
                  mel_bins=128,
+                 mel_samples=172,
                  mfcc_bins=13,
                  overlap=0.75,
                  pad_end=True):
@@ -376,12 +386,45 @@ def compute_mfcc(audio,
   return mfccs[..., :mfcc_bins]
 
 @gin.register
+def compute_mfcc_waveglow(audio,
+                          sample_rate=16000,
+                          lo_hz=20.0,
+                          hi_hz=8000.0,
+                          fft_size=1024,
+                          mel_bins=128,
+                          mel_samples=172,
+                          mfcc_bins=13,
+                          overlap=0.75,
+                          pad_end=True):
+    """Calculate MFCC with log mel spectrogram calculated waveglow style"""
+    print("Calculating MFCCs with waveglow version of mel spectrogram creation...")
+    logmel = compute_waveglow_logmel(
+                audio,
+                sample_rate=sample_rate,
+                lo_hz=lo_hz,
+                hi_hz=hi_hz,
+                bins=mel_bins,
+                fft_size=fft_size,
+                overlap=overlap,
+                pad_end=pad_end,
+                mel_samples=mel_samples)
+
+    if logmel.shape[-1] != mel_bins:
+        logmel = tf.transpose(logmel, perm=[0,2,1])
+    
+    print("waveglow final logmel spec shape: ", logmel.shape)
+    mfccs = tf.signal.mfccs_from_log_mel_spectrograms(logmel)
+    return mfccs[..., :mfcc_bins]
+
+
+@gin.register
 def compute_mfcc_mel_spec(mel_spec,
                  sample_rate=16000,
                  lo_hz=20.0,
                  hi_hz=8000.0,
                  fft_size=1024,
                  mel_bins=80, # Default was 128
+                 mel_samples=172,
                  mfcc_bins=13,
                  overlap=0.75,
                  pad_end=True):
