@@ -21,7 +21,6 @@ MfccTimeDistributedRnnEncoder.z_dims = 16
 MfccTimeDistributedRnnEncoder.rnn_type = 'gru'
 MfccTimeDistributedRnnEncoder.rnn_channels = 512
 MfccTimeDistributedRnnEncoder.spectral_fn = @spectral_ops.compute_mfcc_waveglow  #@spectral_ops.compute_mfcc
-MfccTimeDistributedRnnEncoder.sample_rate = 44100
 MfccTimeDistributedRnnEncoder.mel_bins = 80
 MfccTimeDistributedRnnEncoder.mel_samples = 172
 
