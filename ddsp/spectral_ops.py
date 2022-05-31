@@ -103,7 +103,7 @@ def compute_mel(audio,
                 pad_end=True):
   """Calculate Mel Spectrogram."""
   mag = compute_mag(audio, fft_size, overlap, pad_end)
-  print("matrix of mag from compute_mel: ", mag)
+  #print("matrix of mag from compute_mel: ", mag)
   # mag shape: (1, time dim, num_bins)
   # num_spectrogram_bins = int(mag.shape[-1])
   num_spectrogram_bins = tf.cast(tf.shape(mag)[-1], tf.int32)
@@ -113,7 +113,7 @@ def compute_mel(audio,
       bins, num_spectrogram_bins, sample_rate, lo_hz, hi_hz)
   mel = tf.tensordot(mag, linear_to_mel_matrix, 1)
   mel.set_shape(mag.shape[:-1].concatenate(linear_to_mel_matrix.shape[-1:]))
-  print("matrix of mel from compute_mel: ", mel)
+  #print("matrix of mel from compute_mel: ", mel)
   return mel
 
 @gin.register
@@ -189,8 +189,10 @@ class TacotronSTFT(tf.keras.layers.Layer):
         assert(tf.math.reduce_max(y) <= 1)
 
         magnitudes, phases = self.transform(y)
-        magnitudes = magnitudes
+        #print("magnitudes: ", magnitudes)
         mel_output = tf.linalg.matmul(self.mel_basis, magnitudes) #torch.matmul(self.mel_basis, magnitudes)
+
+        #print("mel output after matmul: ", mel_output)
         mel_output = self.spectral_normalize(mel_output)
         return mel_output
 
@@ -210,7 +212,9 @@ class TacotronSTFT(tf.keras.layers.Layer):
             #(int(self.filter_length / 2), int(self.filter_length / 2), 0, 0),
             mode='REFLECT')
         input_data = tf.squeeze(input_data, 1)
-
+        
+        print("input data shape: ", input_data.shape)
+        #print("input data after padding: \n", input_data)
         # forward_basis
         fourier_basis = np.fft.fft(np.eye(self.filter_length))
 
@@ -228,17 +232,21 @@ class TacotronSTFT(tf.keras.layers.Layer):
 
         # window the bases
         forward_basis *= fft_window
+        #print("forward basis: \n", forward_basis)
 
         print("size of data: ", input_data.shape)
         print("size of forward basis: ", forward_basis.shape)
         # stft transform, no padding
         # default data_format="NWC", where input is (batch size, in width, in channels)
         # From waveglow/pytorch, the data format is (batch size, in channels, L) or (batch, in channels, iW) --> so need to reshape
-        input_data = tf.reshape(input_data, [input_data.shape[0], input_data.shape[2], input_data.shape[1]])
+        # tf.reshape doesn't change the order of elements. tf.transpose reorders data to rearrange dimensions of tensor
+        #input_data = tf.reshape(input_data, [input_data.shape[0], input_data.shape[2], input_data.shape[1]])
+        input_data = tf.transpose(input_data, perm=[0, 2, 1])
 
         # For pytorch, weight/filter shape is (out channels, in channels/groups, kW)
         # For tf, filter needs to be shape (filter width, in channels, out channels)
-        forward_basis = tf.reshape(forward_basis, [forward_basis.shape[2], forward_basis.shape[1], forward_basis.shape[0]])
+        #forward_basis = tf.reshape(forward_basis, [forward_basis.shape[2], forward_basis.shape[1], forward_basis.shape[0]])
+        forward_basis = tf.transpose(forward_basis, perm=[2, 1, 0])
         print("size of data: ", input_data.shape)
         print("size of forward basis: ", forward_basis.shape)
 
@@ -250,10 +258,12 @@ class TacotronSTFT(tf.keras.layers.Layer):
             data_format="NWC",
             dilations=1)
 
-        print("forward transform shape: ", forward_transform.shape)
-
         # tf conv1d output shape is (batch, out width, out channels). in pytorch, conv1d output is (batch size, out channel, L out)
-        forward_transform = tf.reshape(forward_transform, [forward_transform.shape[0], forward_transform.shape[2], forward_transform.shape[1]])
+        #forward_transform = tf.reshape(forward_transform, [forward_transform.shape[0], forward_transform.shape[2], forward_transform.shape[1]])
+        forward_transform = tf.transpose(forward_transform, perm=[0, 2, 1])
+        print("forward transform shape after reshaping: ", forward_transform.shape)
+        print(forward_transform)
+
         cutoff = int((self.filter_length / 2) + 1)
         real_part = forward_transform[:, :cutoff, :]
         imag_part = forward_transform[:, cutoff:, :]
@@ -282,8 +292,10 @@ def compute_waveglow_logmel(audio,
                    hop_length=256,
                    win_length=1024):
     print("Computing logmel waveglow style...")
-    audio_norm = audio / MAX_WAV_VALUE
-    audio_norm = tf.expand_dims(audio_norm, 0)
+    # This normalization is already done by tensorflow's decode audio function
+    #audio_norm = audio / MAX_WAV_VALUE
+    audio_norm = tf.expand_dims(audio, 0)
+
     stft_fn = TacotronSTFT(filter_length=filter_length, hop_length=hop_length, win_length=win_length, sampling_rate=sample_rate, mel_fmin=lo_hz, mel_fmax=hi_hz)
     melspec = stft_fn.mel_spectrogram(audio_norm)
     melspec = tf.squeeze(melspec, 0)
