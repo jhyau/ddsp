@@ -301,15 +301,16 @@ def compute_waveglow_logmel(audio,
     melspec = stft_fn.mel_spectrogram(audio_norm)
 
     # Squeeze if batch size is 1
-    if melspec.shape[0] == 1:
-        melspec = tf.squeeze(melspec, 0)
+    #if melspec.shape[0] == 1:
+    #    melspec = tf.squeeze(melspec, 0)
 
+    print("melspec original shape: ", melspec.shape)
     if mel_samples is not None:
         if len(melspec.shape) >= 3:
             melspec = melspec[:, :, :mel_samples]
         else:
             melspec = melspec[:, :mel_samples]
-        #melspec = melspec[:, : ,:mel_samples]
+    print("after mel_samples: ", melspec.shape)
     return melspec
 
 
@@ -409,8 +410,12 @@ def compute_mfcc_waveglow(audio,
                 pad_end=pad_end,
                 mel_samples=mel_samples)
 
+    print("logmel shape: ", logmel.shape)
     if logmel.shape[-1] != mel_bins:
-        logmel = tf.transpose(logmel, perm=[0,2,1])
+        if len(logmel.shape) == 3:
+            logmel = tf.transpose(logmel, perm=[0,2,1])
+        else:
+            logmel = tf.transpose(logmel, perm=[1,0])
     
     print("waveglow final logmel spec shape: ", logmel.shape)
     mfccs = tf.signal.mfccs_from_log_mel_spectrograms(logmel)
