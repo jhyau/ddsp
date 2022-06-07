@@ -26,7 +26,7 @@ MfccTimeDistributedRnnEncoder.mel_samples = 172
 
 EmbeddingContextEncoder.input_key = 'material_id'
 EmbeddingContextEncoder.output_key = 'material_embedding'
-EmbeddingContextEncoder.vector_length = 8 #32
+EmbeddingContextEncoder.vector_length = 32
 
 
 # Decoders
