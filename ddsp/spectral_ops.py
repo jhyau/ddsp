@@ -326,10 +326,11 @@ def compute_logmel(audio,
                    mel_samples=None):
   print(f"sample rate: {sample_rate}, bin: {bins}, fft_size: {fft_size}, overlap: {overlap}")
   mel = compute_mel(audio, sample_rate, lo_hz, hi_hz, bins, fft_size, overlap, pad_end)
-  print("mel shape in compute_logmel: ", mel.shape)
+  #print("mel shape in compute_logmel: ", mel.shape)
   # Make sure it matches the mel_sample shape
-  if mel_samples is not None:
-      mel = mel[:, :mel_samples, :]
+  #if mel_samples is not None:
+  #    print("splicing the mel spec...")
+  #    mel = mel[:, :mel_samples, :]
   print("final mel shape in compute_logmel: ", mel.shape)
   return safe_log(mel)
 
@@ -380,7 +381,6 @@ def compute_mfcc(audio,
       fft_size=fft_size,
       overlap=overlap,
       pad_end=pad_end)
-  #print("logmel: ", logmel)
   print("Original MFCC logmel shape: ", logmel.shape) # Shape is (1, 1723, 128) --> (1, time dim, mel bins)
   mfccs = tf.signal.mfccs_from_log_mel_spectrograms(logmel)
   print("Original MFCC shape: ", mfccs.shape)
