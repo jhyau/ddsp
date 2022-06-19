@@ -481,6 +481,121 @@ class AudioProvider(DataProvider):
         num_parallel_calls=_AUTOTUNE)
     return dataset
 
+
+@gin.register
+class VisualAudioProvider(DataProvider):
+  """Class for reading wav files and visual features (RGB + optical flow) inputs and returning a dataset."""
+
+  def __init__(self,
+               file_pattern=None,
+               visual_filt_pattern=None,
+               n_samples=64000,
+               audio_sample_rate=16000,
+               frame_rate=250,
+               append_material_id=False,
+               save_material_path=None):
+    self.random_generator = tf.random.Generator.from_seed(1)
+
+    # If there are multiple glob patterns
+    if file_pattern.find('|') != -1:
+        print("Multiple file patterns detected")
+        patterns = file_pattern.split('|')
+        self._file_pattern = patterns
+    else:
+        print("One file pattern detected")
+        self._file_pattern = file_pattern or self.default_file_pattern
+    self._audio_length = n_samples
+    self._feature_length = int(n_samples / audio_sample_rate * frame_rate)
+    super().__init__(audio_sample_rate, frame_rate)
+    self.append_material_id = append_material_id
+    self.save_material_path = save_material_path
+    if self.append_material_id:
+      self.video_table, self.material_table = self.get_tables(self._file_pattern)
+      print(f"Size of video table: {self.video_table.size()}, size of material table: {self.material_table.size()}")
+      print(f"Material ID table: {self.material_table}")
+      print(f"Material ID table values: {self.material_table.export()}")
+      # Write it out to file
+      if not self.save_material_path:
+          raise Exception("Need to provide path to save material ID table if using multiple material IDs")
+          import sys
+          sys.exit(1)
+
+      os.makedirs(self.save_material_path, exist_ok=True)
+      with open(os.path.join(self.save_material_path, 'material_id_table.txt'), 'w') as file:
+          keys, values = self.material_table.export()
+          shape = keys.numpy().shape[0]
+          sort_order = tf.argsort(values.numpy())
+          for i in range(shape):
+            file.write(tf.compat.as_str_any(keys.numpy()[sort_order[i]]) + " " + tf.compat.as_str_any(values.numpy()[sort_order[i]]) + "\n")
+
+    def map_fn(filename):
+      audio = tf.io.read_file(filename)
+      decoded_audio, audio_sample_rate = tf.audio.decode_wav(audio, desired_channels=1)
+      audio_frame_count = tf.shape(decoded_audio)[0]
+      decoded_audio = tf.expand_dims(tf.squeeze(decoded_audio), axis=0)
+      start_index = self.random_generator.uniform([], minval=0, maxval=(audio_frame_count - self._audio_length) + 1, dtype=tf.dtypes.int32)
+      clipped_audio = decoded_audio[:, start_index:(start_index + self._audio_length)]
+      if self.append_material_id:
+        f = tf.strings.split(filename, '/')[-1]
+        video_id = tf.strings.split(f, '-')[0]
+        material_id = tf.strings.split(f, '-')[1]
+        material_id = self.material_table.lookup(tf.strings.join((video_id, material_id), '-'))
+        material_id = tf.expand_dims(material_id, axis=0)
+        print(f"material_id: {material_id} and video_id: {video_id}")
+        video_id = self.video_table.lookup(video_id)
+        video_id = tf.expand_dims(video_id, axis=0)
+        return tf.data.Dataset.from_tensor_slices({'audio':clipped_audio, 'video_id':[video_id], 'material_id':[material_id], 'filename': [filename]})
+      return tf.data.Dataset.from_tensor_slices({'audio':clipped_audio})
+
+    self._data_format_map_fn = map_fn
+
+  @staticmethod
+  def get_tables(file_pattern):
+    # If there are multiple patterns to interpret
+    if isinstance(file_pattern, list):
+        filenames = []
+        for pat in file_pattern:
+            file_paths_sub = glob.glob(pat)
+            files = [os.path.split(f)[1] for f in file_paths_sub]
+            filenames.extend(files)
+    else:
+        file_paths = glob.glob(file_pattern)
+        filenames = [os.path.split(f)[1] for f in file_paths]
+    video_ids = set([f.split('-')[0] for f in filenames])
+    material_ids = set(['-'.join(f.split('-')[:2]) for f in filenames])
+    video_keys_tensor = tf.constant(sorted(list(video_ids)), dtype=tf.string)
+    video_values_tensor = tf.range(len(video_ids), dtype=tf.int32)
+    video_table = tf.lookup.StaticHashTable(
+    tf.lookup.KeyValueTensorInitializer(video_keys_tensor, video_values_tensor), -1)
+    material_keys_tensor = tf.constant(sorted(list(material_ids)), dtype=tf.string)
+    material_values_tensor = tf.range(len(material_ids), dtype=tf.int32)
+    material_table = tf.lookup.StaticHashTable(
+    tf.lookup.KeyValueTensorInitializer(material_keys_tensor, material_values_tensor), -1)
+    return video_table, material_table
+
+
+  @property
+  def default_file_pattern(self):
+    """Used if file_pattern is not provided to constructor."""
+    raise NotImplementedError(
+        'You must pass a "file_pattern" argument to the constructor or '
+        'choose a FileDataProvider with a default_file_pattern.')
+
+  def get_dataset(self, shuffle=True):
+    """Read dataset.
+    Args:
+      shuffle: Whether to shuffle the files.
+    Returns:
+      dataset: A tf.dataset that reads from the TFRecord.
+    """
+    filenames = tf.data.Dataset.list_files(self._file_pattern, shuffle=shuffle)
+    dataset = filenames.interleave(
+        map_func=self._data_format_map_fn,
+        cycle_length=40,
+        num_parallel_calls=_AUTOTUNE)
+    return dataset
+
+
 @gin.register
 class VideoProvider(AudioProvider):
   """Class for reading video records and returning a dataset."""

@@ -28,6 +28,9 @@ parser.add_argument("--validation-interval", type=int, default=20,
                     help="number of steps between validation error checks")
 parser.add_argument("--save-dir", type=str, required=True,
                      help="destination directory for saving checkpoints")
+parser.add_argument("--add-visual-feat", action="store_true", help="Adding visual feature information to modal response pipeline")
+parser.add_argument("--visual-feat-train-pattern", type=str, help="file pattern for matching training visual features")
+parser.add_argument("--visual-feat-val-pattern", type=str, help="file pattern for matching validation visual features")
 
 args = parser.parse_args()
 
@@ -45,6 +48,7 @@ if args.model_type:
     gin.parse_config_file('asmr.gin')
     restore_dir = args.save_dir
 else:
+    print("Restoring from checkpoint: ", args.restore_dir)
     # If restoring from checkpoint, use the gin config stored with the checkpoint
     gin.parse_config_file(ddsp.training.train_util.get_latest_operative_config(args.restore_dir))
     restore_dir = args.restore_dir
@@ -55,6 +59,12 @@ gin.config.bind_parameter('%SAVE_DIR', args.save_dir)
 
 print(gin.config.query_parameter('%TRAIN_FILE_PATTERN'))
 print(f"Loaded gin file... \nThe N_MODAL_FREQUENCIES is : {gin.config.query_parameter('%N_MODAL_FREQUENCIES')} ")
+
+# If adding visual features
+if args.add_visual_feat:
+    gin.config.bind_parameter('%ADD_VISUAL_FEAT', args.add_visual_feat)
+    gin.config.bind_parameter('%VISUAL_TRAIN_FILE_PATTERN', args.visual_feat_train_pattern)
+    gin.config.bind_parameter('$VISUAL_VAL_FILE_PATTERN', args.visual_feat_val_pattern)
 
 # Set dynamic GPU memory growth
 gpus = tf.config.experimental.list_physical_devices('GPU')
