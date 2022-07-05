@@ -352,16 +352,21 @@ def metrics(args, diffimpact_ckpt):
             material_id = determine_material_id(args, aud, material_dict)
 
             # Load audios
+            orig_gt = cdpam.load_audio(f"/juno/u/jyau/asmr-video-to-sound/data/asmr_all/valid/{aud}.wav")
             gt = cdpam.load_audio(f'/juno/u/jyau/asmr-video-to-sound/data/asmr_all/high_pass/valid/{aud}.wav')
             diff_pred = cdpam.load_audio(os.path.join(args.save_dir, aud+"_"+args.input_type+"_"+diffimpact_ckpt+"_material_id_"+str(material_id)+".wav"))
 
             # Normalize amplitudes
             gt_max_amp = np.max(np.abs(gt))
-            print("Max amplitude in ground truth", gt_max_amp)
+            orig_gt_max_amp = np.max(np.abs(orig_gt))
+            print(f"Max amplitude in ground truth with high pass filter: {gt_max_amp} and max amp in original gt: {orig_gt_max_amp}")
             print("gt shape: ", gt.shape)
             gt = normalize_amp(gt)
+            orig_gt = normalize_amp(orig_gt)
             diff_pred = normalize_amp(diff_pred)
 
+            print("========================Evaluation on audio: ", aud)
+            print("************************Compare against high pass filter ground truth...")
             # Calculate CDPAM loss
             dist = loss_fn.forward(gt, diff_pred)
             loss = dist.cpu().detach().numpy()
@@ -389,6 +394,38 @@ def metrics(args, diffimpact_ckpt):
             stft_l2 = STFT_L2_distance(diff_pred, gt)
             print(f"STFT L2 distance between gt and diffimpact synth material id {material_id} of pred: {stft_l2}")
             outfile.write(f"STFT L2 distance between gt and diffimpact synth material id {material_id} of pred: {stft_l2}\n")
+
+
+            print("*********************Compare against original gt....")
+
+            # Calculate CDPAM loss
+            dist = loss_fn.forward(orig_gt, diff_pred)
+            loss = dist.cpu().detach().numpy()
+            print(f"CDPAM loss between orig gt and diffimpact synth material id {material_id} of pred: ", loss)
+            outfile.write(f"CDPAM loss between orig gt and diffimpact synth material id {material_id} of pred: {loss}\n")
+
+            # L2 loss (mean squared loss) comparison
+            l2loss = tf.math.sqrt(tf.reduce_sum(tf.math.squared_difference(orig_gt, diff_pred)))
+            l2norm = tf.norm(orig_gt - diff_pred)
+            print(f"L2 loss between orig gt and diffimpact synth material id {material_id} of pred: {l2loss} also {l2norm}")
+            outfile.write(f"L2 loss between orig gt and diffimpact synth material id {material_id} of pred: {l2loss} also {l2norm}\n")
+
+            # L1 loss comparison
+            l1loss = tf.reduce_sum(tf.math.abs(orig_gt - diff_pred))
+            l1norm = tf.norm(orig_gt - diff_pred, ord=1)
+            print(f"L1 loss between orig gt and diffimpact synth material id {material_id} of pred: {l1loss} and {l1norm}")
+            outfile.write(f"L1 loss between orig gt and diffimpact synth material id {material_id} of pred: {l1loss} and {l1norm}\n")
+
+            # Envelope distance
+            env = Envelope_distance(diff_pred, orig_gt)
+            print(f"Envelope distance between orig gt and diffimpact synth material id {material_id} of pred: {env}")
+            outfile.write(f"Envelope distance between orig gt and diffimpact synth material id {material_id} of pred: {env}\n")
+
+            # STFT L2 distance
+            stft_l2 = STFT_L2_distance(diff_pred, orig_gt)
+            print(f"STFT L2 distance between orig gt and diffimpact synth material id {material_id} of pred: {stft_l2}")
+            outfile.write(f"STFT L2 distance between orig gt and diffimpact synth material id {material_id} of pred: {stft_l2}\n")
+
     print("Finished calculating metrics for diffimpact predictions")
 
 """
@@ -401,7 +438,7 @@ def get_material_dict(diffimpact_ckpt_path):
         for line in file:
             tokens = line.split(" ")
             label_dict[tokens[0].strip()] = int(tokens[-1].strip())
-        print(f"Number of keys in material labels dict: {len(self.label_dict)}")
+        print(f"Number of keys in material labels dict: {len(label_dict)}")
     return label_dict
 
 
@@ -413,8 +450,10 @@ def get_eval_examples_list(args):
         audio_input_list = []
         # Get all audio from validation set
         with open(args.valid_spec_file, 'r') as outfile:
-            aud_name = outfile.readline().strip()
-            audio_input_list.append(audio_name)
+            for line in outfile:
+                aud_name = line.strip()
+                audio_input_list.append(aud_name)
+    print("Number of examples to evaluate: ", len(audio_input_list))
     return audio_input_list
 
 
@@ -437,7 +476,7 @@ def inference(args):
     offset_secs = 0
     
     # Loading in diffimpact config file and getting useful parameters
-    latest_operative_config = ddsp.training.train_util.get_latest_operative_config(args.diffimpact_ckpt_dir)
+    latest_operative_config = ddsp.training.train_util.get_latest_operative_config(args.diffimpact_ckpt_path)
     gin.parse_config_file(latest_operative_config)
     print("Latest operative config used: ", latest_operative_config)
 
@@ -485,7 +524,9 @@ def inference(args):
     model.restore(args.diffimpact_ckpt_path)
 
     # Getting the DiffImpact ckpt name
-    diffimpact_ckpt = args.diffimpact_ckpt_path.split("/")[-1]
+    diffimpact_ckpt_tokens = args.diffimpact_ckpt_path.split("/")
+    no_empty = [x for x in diffimpact_ckpt_tokens if x]
+    diffimpact_ckpt = no_empty[-1]
     print("DiffImpact checkpoint name: ", diffimpact_ckpt)
 
     # Getting list of audio/mel spec(s) to pass as input
@@ -494,6 +535,9 @@ def inference(args):
     # Getting material dictionary
     material_dict = get_material_dict(args.diffimpact_ckpt_path)
 
+    # Create save dir
+    os.makedirs(args.save_dir, exist_ok=True)
+    
     # Reading in the audio or mel spectrogram and running inference
     for aud in audio_input_list:
         # Get material id to use
@@ -517,7 +561,7 @@ def inference(args):
         # Save the synthesized audio
         audio_path = os.path.join(args.save_dir, aud+"_"+args.input_type+"_"+diffimpact_ckpt+"_material_id_"+str(material_id)+".wav")
         transpose_aud = np.transpose(prediction['audio_synth'][:1, :].numpy())
-        scipy.io.wavfile.write(audio_path, audio_sample_rate, np.array(32767 * transpose_aud / np.max(np.abs(prediction['audio_synth']))).astype('int16'))
+        scipy.io.wavfile.write(audio_path, train_sample_rate, np.array(32767 * transpose_aud / np.max(np.abs(prediction['audio_synth']))).astype('int16'))
 
         # Using convolving to generate the audio waveform
     print("Finished with diffimpact inferences")
@@ -536,3 +580,7 @@ if __name__ == '__main__':
     parser.add_argument("--valid_spec_file", type=str, help="File to all validation/test set examples (basically multiple audios to infer as once)")
     parser.add_argument("--audio_title", type=str, default=None, help="Specify a specific audio to pass in. Leave blank to use all validation audio")
     parser.add_argument("--material_id", type=int, default=None, help="If want to use a specific material ID to retrieve a modal response. Otherwise, leave blank to use the corresponding ID")
+    args = parser.parse_args()
+
+    # Run evaluation/inference
+    inference(args)
