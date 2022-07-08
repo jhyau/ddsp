@@ -336,6 +336,36 @@ def pad_audio(audio, shape):
 """
 Running metrics calculations and comparisons for the diffimpact ckpt predictions
 """
+def metrics_calculations(gt, pred, outfile, loss_fn, gt_title, material_id):
+    # Calculate CDPAM loss
+    dist = loss_fn.forward(gt, pred)
+    loss = dist.cpu().detach().numpy()
+    print(f"CDPAM loss between {gt_title} and diffimpact synth material id {material_id} of pred: ", loss)
+    outfile.write(f"CDPAM loss between {gt_title} and diffimpact synth material id {material_id} of pred: {loss}\n")
+
+    # L2 loss (mean squared loss) comparison
+    l2loss = tf.math.sqrt(tf.reduce_sum(tf.math.squared_difference(gt, pred)))
+    l2norm = tf.norm(gt - pred)
+    print(f"L2 loss between {gt_title} and diffimpact synth material id {material_id} of pred: {l2loss} also {l2norm}")
+    outfile.write(f"L2 loss between {gt_title} and diffimpact synth material id {material_id} of pred: {l2loss} also {l2norm}\n")
+
+    # L1 loss comparison
+    l1loss = tf.reduce_sum(tf.math.abs(gt - pred))
+    l1norm = tf.norm(gt - pred, ord=1)
+    print(f"L1 loss between {gt_title} and diffimpact synth material id {material_id} of pred: {l1loss} and {l1norm}")
+    outfile.write(f"L1 loss between {gt_title} and diffimpact synth material id {material_id} of pred: {l1loss} and {l1norm}\n")
+
+    # Envelope distance
+    env = Envelope_distance(pred, gt)
+    print(f"Envelope distance between {gt_title} and diffimpact synth material id {material_id} of pred: {env}")
+    outfile.write(f"Envelope distance between {gt_title} and diffimpact synth material id {material_id} of pred: {env}\n")
+
+    # STFT L2 distance
+    stft_l2 = STFT_L2_distance(pred, gt)
+    print(f"STFT L2 distance between {gt_title} and diffimpact synth material id {material_id} of pred: {stft_l2}")
+    outfile.write(f"STFT L2 distance between {gt_title} and diffimpact synth material id {material_id} of pred: {stft_l2}\n")
+
+
 def metrics(args, diffimpact_ckpt):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -354,78 +384,36 @@ def metrics(args, diffimpact_ckpt):
             # Load audios
             orig_gt = cdpam.load_audio(f"/juno/u/jyau/asmr-video-to-sound/data/asmr_all/valid/{aud}.wav")
             gt = cdpam.load_audio(f'/juno/u/jyau/asmr-video-to-sound/data/asmr_all/high_pass/valid/{aud}.wav')
+            repeated_gt = cdpam.load_audio(f"/juno/u/jyau/regnet/data/features/tapping/materials/audio_10s/{aud}.wav")
             diff_pred = cdpam.load_audio(os.path.join(args.save_dir, aud+"_"+args.input_type+"_"+diffimpact_ckpt+"_material_id_"+str(material_id)+".wav"))
 
             # Normalize amplitudes
             gt_max_amp = np.max(np.abs(gt))
             orig_gt_max_amp = np.max(np.abs(orig_gt))
-            print(f"Max amplitude in ground truth with high pass filter: {gt_max_amp} and max amp in original gt: {orig_gt_max_amp}")
+            repeated_gt_max_amp = np.max(np.abs(repeated_gt))
+            print(f"Max amplitude in ground truth with high pass filter: {gt_max_amp} and max amp in original gt: {orig_gt_max_amp} and max amp in repeated gt: {repeated_gt_max_amp}")
             print("gt shape: ", gt.shape)
             gt = normalize_amp(gt)
             orig_gt = normalize_amp(orig_gt)
+            repeated_gt = normalize_amp(repeated_gt)
             diff_pred = normalize_amp(diff_pred)
 
             print("========================Evaluation on audio: ", aud)
             print("************************Compare against high pass filter ground truth...")
-            # Calculate CDPAM loss
-            dist = loss_fn.forward(gt, diff_pred)
-            loss = dist.cpu().detach().numpy()
-            print(f"CDPAM loss between gt and diffimpact synth material id {material_id} of pred: ", loss)
-            outfile.write(f"CDPAM loss between gt and diffimpact synth material id {material_id} of pred: {loss}\n")
 
-            # L2 loss (mean squared loss) comparison
-            l2loss = tf.math.sqrt(tf.reduce_sum(tf.math.squared_difference(gt, diff_pred)))
-            l2norm = tf.norm(gt - diff_pred)
-            print(f"L2 loss between gt and diffimpact synth material id {material_id} of pred: {l2loss} also {l2norm}")
-            outfile.write(f"L2 loss between gt and diffimpact synth material id {material_id} of pred: {l2loss} also {l2norm}\n")
+            outfile.write(f"Calculating metrics for {aud} using material id: {material_id}\n")
 
-            # L1 loss comparison
-            l1loss = tf.reduce_sum(tf.math.abs(gt - diff_pred))
-            l1norm = tf.norm(gt - diff_pred, ord=1)
-            print(f"L1 loss between gt and diffimpact synth material id {material_id} of pred: {l1loss} and {l1norm}")
-            outfile.write(f"L1 loss between gt and diffimpact synth material id {material_id} of pred: {l1loss} and {l1norm}\n")
+            # If the shape is different due to needing repeat
+            if gt.shape != diff_pred.shape:
+                outfile.write("The original audio was <10 seconds, so this one needed repeating\n")
+                metrics_calculations(repeated_gt, diff_pred, outfile, loss_fn, "repeated gt", material_id)
+                continue
 
-            # Envelope distance
-            env = Envelope_distance(diff_pred, gt)
-            print(f"Envelope distance between gt and diffimpact synth material id {material_id} of pred: {env}")
-            outfile.write(f"Envelope distance between gt and diffimpact synth material id {material_id} of pred: {env}\n")
-
-            # STFT L2 distance
-            stft_l2 = STFT_L2_distance(diff_pred, gt)
-            print(f"STFT L2 distance between gt and diffimpact synth material id {material_id} of pred: {stft_l2}")
-            outfile.write(f"STFT L2 distance between gt and diffimpact synth material id {material_id} of pred: {stft_l2}\n")
-
-
+            metrics_calculations(gt, diff_pred, outfile, loss_fn, "high pass gt", material_id)
             print("*********************Compare against original gt....")
-
-            # Calculate CDPAM loss
-            dist = loss_fn.forward(orig_gt, diff_pred)
-            loss = dist.cpu().detach().numpy()
-            print(f"CDPAM loss between orig gt and diffimpact synth material id {material_id} of pred: ", loss)
-            outfile.write(f"CDPAM loss between orig gt and diffimpact synth material id {material_id} of pred: {loss}\n")
-
-            # L2 loss (mean squared loss) comparison
-            l2loss = tf.math.sqrt(tf.reduce_sum(tf.math.squared_difference(orig_gt, diff_pred)))
-            l2norm = tf.norm(orig_gt - diff_pred)
-            print(f"L2 loss between orig gt and diffimpact synth material id {material_id} of pred: {l2loss} also {l2norm}")
-            outfile.write(f"L2 loss between orig gt and diffimpact synth material id {material_id} of pred: {l2loss} also {l2norm}\n")
-
-            # L1 loss comparison
-            l1loss = tf.reduce_sum(tf.math.abs(orig_gt - diff_pred))
-            l1norm = tf.norm(orig_gt - diff_pred, ord=1)
-            print(f"L1 loss between orig gt and diffimpact synth material id {material_id} of pred: {l1loss} and {l1norm}")
-            outfile.write(f"L1 loss between orig gt and diffimpact synth material id {material_id} of pred: {l1loss} and {l1norm}\n")
-
-            # Envelope distance
-            env = Envelope_distance(diff_pred, orig_gt)
-            print(f"Envelope distance between orig gt and diffimpact synth material id {material_id} of pred: {env}")
-            outfile.write(f"Envelope distance between orig gt and diffimpact synth material id {material_id} of pred: {env}\n")
-
-            # STFT L2 distance
-            stft_l2 = STFT_L2_distance(diff_pred, orig_gt)
-            print(f"STFT L2 distance between orig gt and diffimpact synth material id {material_id} of pred: {stft_l2}")
-            outfile.write(f"STFT L2 distance between orig gt and diffimpact synth material id {material_id} of pred: {stft_l2}\n")
-
+            metrics_calculations(orig_gt, diff_pred, outfile, loss_fn, "orig gt (no high pass filter)", material_id)
+            
+            outfile.write("====================================================================================\n")
     print("Finished calculating metrics for diffimpact predictions")
 
 """
