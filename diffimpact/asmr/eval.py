@@ -384,7 +384,7 @@ def metrics(args, diffimpact_ckpt):
             # Load audios
             orig_gt = cdpam.load_audio(f"/juno/u/jyau/asmr-video-to-sound/data/asmr_all/valid/{aud}.wav")
             gt = cdpam.load_audio(f'/juno/u/jyau/asmr-video-to-sound/data/asmr_all/high_pass/valid/{aud}.wav')
-            repeated_gt = cdpam.load_audio(f"/juno/u/jyau/regnet/data/features/tapping/materials/audio_10s/{aud}.wav")
+            repeated_gt = cdpam.load_audio(f"/juno/u/jyau/regnet/data/features/tapping/materials/audio_10s/{aud}.wav")[:, :220500]
             diff_pred = cdpam.load_audio(os.path.join(args.save_dir, aud+"_"+args.input_type+"_"+diffimpact_ckpt+"_material_id_"+str(material_id)+".wav"))
 
             # Normalize amplitudes
@@ -406,6 +406,7 @@ def metrics(args, diffimpact_ckpt):
             # If the shape is different due to needing repeat
             if gt.shape != diff_pred.shape:
                 outfile.write("The original audio was <10 seconds, so this one needed repeating\n")
+                print(f"orig gt shape: {orig_gt.shape}, high pass gt shape: {gt.shape}, repated_gt shape: {repeated_gt.shape}, diffimpact pred shape: {diff_pred.shape}")
                 metrics_calculations(repeated_gt, diff_pred, outfile, loss_fn, "repeated gt", material_id)
                 continue
 
@@ -485,7 +486,11 @@ def inference(args):
     # Change the MFCC mel samples if using waveglow calculation
     new_mel_samples = example_secs * 172
     gin.config.bind_parameter('MfccTimeDistributedRnnEncoder.mel_samples', new_mel_samples)
-    print("mel samples: ", new_mel_samples) 
+    print("mel samples: ", new_mel_samples)
+
+    # Force profile prediction noise
+    gin.config.bind_parameter("Impact.include_noise", args.no_include_noise)
+    print("Impact synth module including noise? ", gin.config.query_parameter("Impact.include_noise"))
 
     # Preparing the correct configs
     gin.config.bind_parameter('FilteredNoiseExpDecayReverb.gain_initial_bias', -4)
@@ -568,6 +573,7 @@ if __name__ == '__main__':
     parser.add_argument("--valid_spec_file", type=str, help="File to all validation/test set examples (basically multiple audios to infer as once)")
     parser.add_argument("--audio_title", type=str, default=None, help="Specify a specific audio to pass in. Leave blank to use all validation audio")
     parser.add_argument("--material_id", type=int, default=None, help="If want to use a specific material ID to retrieve a modal response. Otherwise, leave blank to use the corresponding ID")
+    parser.add_argument("--no_include_noise", action="store_false", help="Use this flag to not include noise in force profile prediction")
     args = parser.parse_args()
 
     # Run evaluation/inference
